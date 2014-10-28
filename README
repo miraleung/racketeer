@@ -1,0 +1,8 @@
+Install:
+
+cd ..
+raco link testplugin
+raco setup testplugin
+
+^-- do this again every time the info.rkt file is changed.
+

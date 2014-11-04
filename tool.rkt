@@ -13,7 +13,7 @@
 (define whitetextdelta (send bolddelta set-delta-foreground "white"))
 (define styledelta (send whitetextdelta set-delta-background "red"))
 
-(define secret-key "test")
+(define secret-key "egg")
 
 (define tool@
   (unit
@@ -72,7 +72,34 @@
           [(list 'test expected actual) (equal? (eval expected) (eval actual))]
           [else #f])))
     
+    ;; string -> boolean
+;; Returns true if str is a test-expression with matching closed parentheses.
+;; Does not check for syntax of internal expressions.
+;; TODO: Abstract to {}, [].
+(define (done-test? str) 
+  (and (> (string-length str) 5)
+       (string=? (substring str 0 5) "(test")
+       (parens-closed? str)))
+
+;; string -> boolean
+;; Returns true if str starts with an open paren and 
+;; has a matching number of parens.
+(define (parens-closed? str)
+  (and (> (string-length str) 0)
+       (string=? (substring str 0 1) ")")
+       (parens-closed-helper str 0 0)))
+
+;; string Int Int -> boolean
+;; helper for parens-closed?
+(define (parens-closed-helper str l r)
+  (cond  [(= 0 (string-length str)) (= l r)]
+        [(string=? (substring str 0 1) "(")
+         (parens-closed-helper (substring str 1) (+ l 1) r)]
+        [(string=? (substring str 0 1) ")")
+         (parens-closed-helper (substring str 1) l (+ r 1))]
+        [else (parens-closed-helper (substring str 1) l r)]))
     
+;; PLUGIN FUNCTIONS ==============
     (define reverse-button-mixin
       (mixin (drracket:unit:frame<%>) ()
         (super-new)

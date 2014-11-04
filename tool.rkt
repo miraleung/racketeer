@@ -66,10 +66,11 @@
     ; and returns #t if exp1 and exp2 evaluate to the same value.
     ; TODO: handle exceptions
     (define (test-passes? str)
-      (define test-exp (read (open-input-string str)))
-      (match test-exp
-        [(list 'test expected actual) (equal? (eval expected) (eval actual))]
-        [else #f]))
+      (with-handlers ([exn:fail? (lambda (v) #f)])
+        (define test-exp (read (open-input-string str)))
+        (match test-exp
+          [(list 'test expected actual) (equal? (eval expected) (eval actual))]
+          [else #f])))
     
     
     (define reverse-button-mixin

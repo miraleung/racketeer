@@ -3,6 +3,7 @@
          racket/class
          racket/gui/base
          racket/unit
+         racket/match
          mrlib/switchable-button)
 (provide tool@)
 
@@ -18,38 +19,38 @@
   (unit
     (import drracket:tool^)
     (export drracket:tool-exports^)
-
+    
     (define easter-egg-mixin
       (mixin ((class->interface text%)) ()
-
+        
         (inherit begin-edit-sequence
                  end-edit-sequence
                  insert
                  change-style
                  get-text
                  set-styles-sticky)
-
+        
         (define/augment (on-insert start len)
           (begin-edit-sequence))
         (define/augment (after-insert start len)
           (check-range (max 0 (- start (string-length secret-key)))
                        (+ start len))
           (end-edit-sequence))
-
+        
         (define/augment (on-delete start len)
           (begin-edit-sequence))
         (define/augment (after-delete start len)
           (check-range (max 0 (- start (string-length secret-key)))
                        start)
           (end-edit-sequence))
-
+        
         (define/augment (on-change-style start len)
           (begin-edit-sequence))
         (define/augment (after-change-style start len)
           (check-range (max 0 (- start (string-length secret-key)))
                        start)
           (end-edit-sequence))
-
+        
         (define/private (check-range start stop)
           (let/ec k
             (for ((x (in-range start stop)))
@@ -57,16 +58,27 @@
                 (get-text x (+ x (string-length secret-key))))
               (when (string=? after-x secret-key)
                 (change-style styledelta x (+ x (string-length secret-key)))))))
-
+        
         (super-new)))
-
+    
+    ; string -> boolean
+    ; Takes a string containing a test expression, i.e. "(test exp1 exp2)"
+    ; and returns #t if exp1 and exp2 evaluate to the same value.
+    ; TODO: handle exceptions
+    (define (test-passes? str)
+      (define test-exp (read (open-input-string str)))
+      (match test-exp
+        [(list 'test expected actual) (equal? (eval expected) (eval actual))]
+        [else #f]))
+    
+    
     (define reverse-button-mixin
       (mixin (drracket:unit:frame<%>) ()
         (super-new)
         (inherit get-button-panel
                  get-definitions-text)
         (inherit register-toolbar-button)
-
+        
         (let ((btn
                (new switchable-button%
                     (label "Reverse Definitions")
@@ -79,7 +91,7 @@
           (send (get-button-panel) change-children
                 (λ (l)
                   (cons btn (remq btn l)))))))
-
+    
     (define reverse-content-bitmap
       (let* ((bmp (make-bitmap 16 16))
              (bdc (make-object bitmap-dc% bmp)))
@@ -92,7 +104,7 @@
         (send bdc draw-ellipse 6 6 8 8)
         (send bdc set-bitmap #f)
         bmp))
-
+    
     (define (reverse-content text)
       (for ((x (in-range 1 (send text last-position))))
         (send text split-snip x))
@@ -107,9 +119,9 @@
           snip))
       (for ((x (in-list released-snips)))
         (send text insert x 0 0)))
-
+    
     (define (phase1) (void))
     (define (phase2) (void))
-
+    
     (drracket:get/extend:extend-definitions-text easter-egg-mixin)
     (drracket:get/extend:extend-unit-frame reverse-button-mixin)))

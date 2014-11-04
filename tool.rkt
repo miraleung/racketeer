@@ -12,7 +12,7 @@
 (define whitetextdelta (send bolddelta set-delta-foreground "white"))
 (define styledelta (send whitetextdelta set-delta-background "red"))
 
-(define secret-key "test")
+(define secret-key "egg")
 
 (define tool@
   (unit

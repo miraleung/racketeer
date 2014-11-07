@@ -42,6 +42,12 @@
     (send whitetextdelta set-delta-background "red")))
 
 (define (boolean->string b) (if b "#t" "#f"))
+(define pass-test-msg "; yay, it passed")
+(define fail-test-msg "; yay, it failed")
+(define syn-error-msg "; < syntax error")
+(define oom-error-msg "; out-of-memory ")
+(define oth-error-msg "; error occurred ")
+(define test-msg-len (string-length pass-test-msg))
 
 ;(define secret-key "(test (+ 2 1) (+ 1 2))")
 ;(define secret-key2 "(test (+ 2 1) (+ 1 1))")
@@ -93,8 +99,9 @@
             (for ((x (in-range start stop)))
               (define after-x
                 (get-text x (+ x test-length)))
-                (when (done-test? after-x)
-                  (local [(define test-rc (test-passes? after-x))]
+                #:break (not (done-test? after-x))
+                  (local [(define test-rc (test-passes? after-x))
+                          (define test-msg (get-test-msg test-rc))]
                     (change-style
                       ; This has to be inline - if it's defined at the top, styledelta will be set statically.
                          (cond  [(syntax-error? test-rc) ; syntax error
@@ -126,8 +133,19 @@
                   (send
                     (send (make-object style-delta% 'change-weight 'base) set-delta-foreground "black")
                     set-delta-background "white")
+                  #;
+                  (if (string=? test-msg oom-error-msg) ;; this works, but pops up like 10 times 
+                      (message-box "Racketeer" "Out of memory!")
+                      (void))
+                  #;
+                  (define insert-x (get-text (+ x test-length))) ; TODO: fix infinite text-adding
+                    #;
+                    (unless (string=? insert-x test-msg) 
+                       (insert test-msg (+ stop 1) (string-length test-msg)))
                   ) ;; // local
-                  ))))
+                  ) ;; // when
+                  ) ;; // for
+                  ))
 
         (super-new)))
 
@@ -182,6 +200,13 @@
                 passd-test
                 faild-test)))]
     [else syn-err])) ;; TODO: Change this to other-error ??
+
+(define (get-test-msg test-rc)
+  (cond [(syntax-error? test-rc) syn-error-msg]
+        [(out-of-memory-error? test-rc) oom-error-msg]
+        [(other-error? test-rc) oth-error-msg]
+        [(passed-test? test-rc) pass-test-msg]
+        [(failed-test? test-rc) fail-test-msg]))
 
 ;; string -> boolean
 ;; Returns true if str is a test-expression with matching closed parentheses.

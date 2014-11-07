@@ -1,12 +1,11 @@
 #lang racket
 (require drracket/tool
-scribble/eval
          racket/class
          racket/gui/base
          racket/unit
          racket/match
          mrlib/switchable-button
-  	 test-engine/racket-tests)
+  	     test-engine/racket-tests)
 (provide tool@)
 
 ; Hook into current namespace; for eval.
@@ -16,10 +15,12 @@ scribble/eval
 (define bolddelta (make-object style-delta% 'change-weight 'bold))
 ;(send bolddelta set-weight-on 'bold)
 ;(send bolddelta set-weight-off 'normal)
+; Doesn't work for switching styles: sets it statically
 ;(define whitetextdelta (send bolddelta set-delta-foreground "white"))
 ;(define blacktextdelta (send bolddelta set-delta-foreground "black"))
 ;(define failstyledelta (send whitetextdelta set-delta-background "red"))
 
+; Doesn't work either
 #;
 (define pass-styledelta 
   (local [(define blacktextdelta (send bolddelta set-delta-foreground "black"))]
@@ -82,14 +83,13 @@ scribble/eval
         
         (super-new)))
     
-
     ; string -> boolean
     ; Takes a string containing a test expression, i.e. "(test exp1 exp2)"
     ; and returns #t if exp1 and exp2 evaluate to the same value.
     ; TODO: handle exceptions
     (define (test-passes? str) 
       (define test-exp (read (open-input-string str)))
-     (match test-exp
+      (match test-exp
         [(list 'test expected actual) (equal? (eval expected ns) (eval actual ns))]
         [else #f]))
     

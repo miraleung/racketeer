@@ -99,7 +99,7 @@
             (for ((x (in-range start stop)))
               (define after-x
                 (get-text x (+ x test-length)))
-                #:break (not (done-test? after-x))
+                  (when (done-test? after-x)
                   (local [(define test-rc (test-passes? after-x))
                           (define test-msg (get-test-msg test-rc))]
                     (change-style
@@ -134,13 +134,13 @@
                     (send (make-object style-delta% 'change-weight 'base) set-delta-foreground "black")
                     set-delta-background "white")
                   #;
-                  (if (string=? test-msg oom-error-msg) ;; this works, but pops up like 10 times 
+                  (if (string=? test-msg oom-error-msg) ;; this works, but pops up like 10 times
                       (message-box "Racketeer" "Out of memory!")
                       (void))
                   #;
                   (define insert-x (get-text (+ x test-length))) ; TODO: fix infinite text-adding
                     #;
-                    (unless (string=? insert-x test-msg) 
+                    (unless (string=? insert-x test-msg)
                        (insert test-msg (+ stop 1) (string-length test-msg)))
                   ) ;; // local
                   ) ;; // when

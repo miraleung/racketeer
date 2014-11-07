@@ -32,9 +32,9 @@
 
 (define (boolean->string b) (if b "#t" "#f"))
 
-(define secret-key "(test (+ 2 1) (+ 1 2))")
-(define secret-key2 "(test (+ 2 1) (+ 1 1))")
-(define test-start "(test")
+;(define secret-key "(test (+ 2 1) (+ 1 2))")
+;(define secret-key2 "(test (+ 2 1) (+ 1 1))")
+;(define test-start "(test")
 (define test-length 50)
 ;; TODO: Test keyword support is currently not abstract enough.
 ;(define test-keywords (list "test" "check-expect"))
@@ -109,9 +109,10 @@
 
         (super-new)))
 
-    ; string -> (or/c 1 0 -1)
+    ; string -> (or/c boolean void)
     ; Takes a string containing a test expression, i.e. "(test exp1 exp2)"
-    ; and returns #t if exp1 and exp2 evaluate to the same value.
+    ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not, 
+    ; and (void) if either of exp1 or exp2 have bad syntax.
     ; TODO: handle exceptions
     (define (test-passes? str)
       (define test-exp (read (open-input-string str)))

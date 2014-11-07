@@ -1,19 +1,36 @@
-#lang racket/base
+#lang racket
 (require drracket/tool
+scribble/eval
          racket/class
          racket/gui/base
          racket/unit
          racket/match
-         mrlib/switchable-button)
+         mrlib/switchable-button
+  	 test-engine/racket-tests)
 (provide tool@)
+
+; Hook into current namespace; for eval.
+(define-namespace-anchor anc)
+(define ns (namespace-anchor->namespace anc))
 
 (define bolddelta (make-object style-delta% 'change-weight 'bold))
 ;(send bolddelta set-weight-on 'bold)
 ;(send bolddelta set-weight-off 'normal)
-(define whitetextdelta (send bolddelta set-delta-foreground "white"))
-(define styledelta (send whitetextdelta set-delta-background "red"))
+;(define whitetextdelta (send bolddelta set-delta-foreground "white"))
+;(define blacktextdelta (send bolddelta set-delta-foreground "black"))
+;(define failstyledelta (send whitetextdelta set-delta-background "red"))
 
-(define secret-key "egg")
+#;
+(define pass-styledelta 
+  (local [(define blacktextdelta (send bolddelta set-delta-foreground "black"))]
+    (send blacktextdelta set-delta-background "green")))
+#;
+(define fail-styledelta 
+  (local [(define whitetextdelta (send bolddelta set-delta-foreground "white"))]
+    (send whitetextdelta set-delta-background "red")))
+
+(define secret-key "(test 1 1)")
+(define secret-key2 "(test 1 2)")
 
 (define tool@
   (unit
@@ -56,22 +73,27 @@
             (for ((x (in-range start stop)))
               (define after-x
                 (get-text x (+ x (string-length secret-key))))
-              (when (string=? after-x secret-key)
-                (change-style styledelta x (+ x (string-length secret-key)))))))
+                (when (or (string=? after-x secret-key) (string=? after-x secret-key2)) 
+		     (change-style (if (test-passes? after-x) 
+                       ; This has to be inline - if it's defined at the top, styledelta will be set statically.
+                       (send (send bolddelta set-delta-foreground "black") set-delta-background "green")
+                       (send (send bolddelta set-delta-foreground "white") set-delta-background "red"))
+                           x (+ x (string-length secret-key)))))))
         
         (super-new)))
     
+
     ; string -> boolean
     ; Takes a string containing a test expression, i.e. "(test exp1 exp2)"
     ; and returns #t if exp1 and exp2 evaluate to the same value.
     ; TODO: handle exceptions
-    (define (test-passes? str)
+    (define (test-passes? str) 
       (define test-exp (read (open-input-string str)))
-      (match test-exp
-        [(list 'test expected actual) (equal? (eval expected) (eval actual))]
+     (match test-exp
+        [(list 'test expected actual) (equal? (eval expected ns) (eval actual ns))]
         [else #f]))
     
-    ;; string -> boolean
+;; string -> boolean
 ;; Returns true if str is a test-expression with matching closed parentheses.
 ;; Does not check for syntax of internal expressions.
 ;; TODO: Abstract to {}, [].

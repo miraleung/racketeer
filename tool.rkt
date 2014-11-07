@@ -36,6 +36,8 @@
 (define secret-key2 "(test (+ 2 1) (+ 1 1))")
 (define test-start "(test")
 (define test-length 50)
+;; TODO: Test keyword support is currently not abstract enough.
+;(define test-keywords (list "test" "check-expect"))
 
 (define tool@
   (unit
@@ -114,7 +116,7 @@
     (define (test-passes? str)
       (define test-exp (read (open-input-string str)))
       (match test-exp
-        [(list 'test expected actual)
+        [(list (or 'check-expect 'test) expected actual)
          (local [(define (try-eval expr)
                    (with-handlers [(exn:fail? (lambda (e) (void)))] (eval expr ns)))
                  (define chk (try-eval expected))
@@ -129,8 +131,11 @@
 ;; Does not check for syntax of internal expressions.
 ;; TODO: Abstract to {}, [].
 (define (done-test? str)
-  (and (> (string-length str) 5)
-       (string=? (substring str 0 5) "(test")
+  (and (or
+         (and (> (string-length str) 5)
+              (string=? (substring str 0 5) "(test"))
+         (and (> (string-length str) 13)
+              (string=? (substring str 0 13) "(check-expect")))
        (parens-closed? str)))
 
 ;; string -> boolean

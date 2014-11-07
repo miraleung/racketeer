@@ -2,15 +2,26 @@
 (require drracket/tool
          racket/class
          racket/gui/base
+         racket/gui
          racket/unit
          racket/match
          mrlib/switchable-button
-  	     test-engine/racket-tests)
+  	     test-engine/racket-tests
+         racket/sandbox
+         framework
+         unstable/function )
 (provide tool@)
 
 ; Hook into current namespace; for eval.
 (define-namespace-anchor anc)
 (define ns (namespace-anchor->namespace anc))
+
+;; Test/error structs
+(define-struct passed-test (void))
+(define-struct failed-test (void))
+(define-struct syntax-error (void))
+(define-struct out-of-memory-error (void))
+(define-struct other-error (void)) ; meant for exceptions
 
 (define bolddelta (make-object style-delta% 'change-weight 'bold))
 ;(send bolddelta set-weight-on 'bold)
@@ -35,7 +46,7 @@
 ;(define secret-key "(test (+ 2 1) (+ 1 2))")
 ;(define secret-key2 "(test (+ 2 1) (+ 1 1))")
 ;(define test-start "(test")
-(define test-length 50)
+(define test-length 70)
 ;; TODO: Test keyword support is currently not abstract enough.
 ;(define test-keywords (list "test" "check-expect"))
 
@@ -86,46 +97,91 @@
                   (local [(define test-rc (test-passes? after-x))]
                     (change-style
                       ; This has to be inline - if it's defined at the top, styledelta will be set statically.
-                         (cond  [(void? test-rc) ; syntax error
+                         (cond  [(syntax-error? test-rc) ; syntax error
                                  (send
                                   (send bolddelta ; (make-object style-delta% 'change-weight 'base)
                                         set-delta-foreground "black")
                                    set-delta-background "yellow")]
-                                [test-rc ; pass
+                                [(other-error? test-rc) ; exception
+                                 (send
+                                  (send bolddelta
+                                        set-delta-foreground "white")
+                                   set-delta-background "purple")]
+                                [(out-of-memory-error? test-rc) ; exception
+                                 (send
+                                  (send bolddelta
+                                        set-delta-foreground "white")
+                                   set-delta-background "blue")]
+                                [(passed-test? test-rc) ; pass
                                   (send
                                     (send bolddelta set-delta-foreground "black")
                                   set-delta-background "green")]
-                               [(not test-rc) ; fail
+                               [(failed-test? test-rc) ; fail
                                 (send
                                   (send bolddelta set-delta-foreground "white")
                                   set-delta-background "red")])
-                               x (+ x (string-length (newline-begins-substring after-x)))))
+                               x (+ x (string-length (newline-begins-substring after-x))))
                   ;; fyi: this has no effect
                   #;
                   (send
                     (send (make-object style-delta% 'change-weight 'base) set-delta-foreground "black")
                     set-delta-background "white")
+                  ) ;; // local
                   ))))
 
         (super-new)))
 
-    ; string -> (or/c boolean void)
-    ; Takes a string containing a test expression, i.e. "(test exp1 exp2)"
-    ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not, 
-    ; and (void) if either of exp1 or exp2 have bad syntax.
-    ; TODO: handle exceptions
-    (define (test-passes? str)
-      (define test-exp (read (open-input-string str)))
-      (match test-exp
-        [(list (or 'check-expect 'test) expected actual)
-         (local [(define (try-eval expr)
-                   (with-handlers [(exn:fail? (lambda (e) (void)))] (eval expr ns)))
-                 (define chk (try-eval expected))
-                 (define ept (try-eval actual))]
-                (if (or (void? chk) (void? ept))
-                  (void)
-                  (equal? chk ept)))]
-         [else #f]))
+; string -> (or/c boolean void)
+; Takes a string containing a test expression, i.e. "(test exp1 exp2)"
+; Returns #t if exp1 and exp2 evaluate to the same value, #f if not,
+; and (void) if either of exp1 or exp2 have bad syntax.
+; TODO: handle exceptions
+(define (test-passes? str)
+  (define test-exp (read (open-input-string str)))
+  (define syn-err (make-syntax-error (void)))
+  (define oom-err (make-out-of-memory-error (void)))
+  (define other-err (make-other-error (void)))
+  (define passd-test (make-passed-test (void)))
+  (define faild-test (make-failed-test (void)))
+  (define (try-eval expr)
+                 (with-handlers [ ;TODO: Need a good syntax matcher
+                                  ;(exn:fail:syntax? (lambda (e) syn-err))
+                                 ; workaround for exn:fail:out-of-memory? not terminating
+                                 (exn:fail:resource? (lambda (e) oom-err))
+                                 (exn:fail? (lambda (e) syn-err))]
+                                (with-limits 0.2 0.1 (eval expr ns))))
+  (define (test-rc lo-expr)
+    (local [(define vals (map (lambda (x) (try-eval x)) lo-expr))
+            (define (foldor lst) (foldr (lambda (x y) (or x y)) #f lst))
+            (define (foldand lst) (foldr (lambda (x y) (and x y)) #t lst))]
+      (cond [(foldor (map syntax-error? vals)) syn-err] ; syntax error
+            [(foldor (map out-of-memory-error? vals)) oom-err]    ; some other error
+            [(foldor (map other-error? vals)) other-err]
+            [else
+              (if (foldand (map (lambda (x) (equal? x (first vals))) vals))
+                passd-test
+                faild-test)])))
+  (match test-exp
+    [(list (or 'check-expect 'test) actual expected)
+     (test-rc (list actual expected))]
+    [(list 'test/exn actual str)
+     (if (not (string? str))
+       syn-err
+       (if (and (string? str) (syntax-error? (try-eval actual))) ; <- this should be other-error, once syntax-matching is fixed.
+         passd-test
+         faild-test))]
+    [(list 'check-error actual)
+     (if (syntax-error? (try-eval actual))
+       passd-test
+       faild-test)]
+    [(list 'test/pred expr pred)
+     (local [(define pred-app (try-eval pred))]
+            (if (not (procedure? pred-app))
+              syn-err
+              (if (pred-app expr)
+                passd-test
+                faild-test)))]
+    [else syn-err])) ;; TODO: Change this to other-error ??
 
 ;; string -> boolean
 ;; Returns true if str is a test-expression with matching closed parentheses.
@@ -135,8 +191,8 @@
   (and (or
          (and (> (string-length str) 5)
               (string=? (substring str 0 5) "(test"))
-         (and (> (string-length str) 13)
-              (string=? (substring str 0 13) "(check-expect")))
+         (and (> (string-length str) 12) ; <- shortest -s c-error
+              (string=? (substring str 0 7) "(check-")))
        (parens-closed? str)))
 
 ;; string -> boolean
@@ -269,3 +325,4 @@
 
     (drracket:get/extend:extend-definitions-text easter-egg-mixin)
     (drracket:get/extend:extend-unit-frame reverse-button-mixin)))
+

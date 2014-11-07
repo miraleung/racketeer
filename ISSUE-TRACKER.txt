@@ -1,0 +1,11 @@
+An incredibly cutting-edge issue tracker.
+
+Issues
+-------
+
+- Editing in the middle of a test case will sometimes cause DrRacket to crash:
+    - when the edit removes one of a matching ""
+    - when #f or #t remove either the char or the #
+ - Loading some saved file doesn't work
+ - Partial highlighting of tests, and overflow of highlights; anything out of test-length range of the cursor doesn't get properly highlighted, if at all
+

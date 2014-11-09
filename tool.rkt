@@ -81,6 +81,7 @@
         (define/augment (on-insert start len)
           (begin-edit-sequence))
         (define/augment (after-insert start len)
+;(message-box "a" (string-append (number->string start) " " (number->string len) " " (number->string (or (find-newline 'backward) -1)) " " (number->string (or (find-newline) -1))))
           (check-range (max 0 (- start test-length))
                        (+ start len))
           (end-edit-sequence))
@@ -101,13 +102,17 @@
 
         (define/private (check-range start stop)
           (let/ec k
-            (for ((x (in-range start stop)))
-              ;(message-box "box" (string-append (number->string x) " " (number->string start) " " (number->string stop)))
+             (define alltext (get-text 0 (last-position)))
+; (message-box "b" (string-append (number->string start) " " (number->string x) " " (number->string x-end) alltext))
+;            (for ((x (in-range start stop)))
+            ; (for ((x (list "(test" "(test/exn" "(test/pred" "(check-expect" "(check-error")))
+              (define-values (x x-end) (start-match-end-idx alltext stop))
+              (when (and (> x 0) (not (= x x-end)))
               (define after-x
-                (get-text x (+ x test-length)))
+                (get-text x x-end))
                   (when (done-test? after-x)
-                  (local [(define alltext (get-text 0 (last-position))) 
-                          (define idx (+ 1 (strindex alltext #\newline))) ; eliminate the first line : lang line
+;(message-box "a" (string-append (number->string x) " "(number->string x-end) " " after-x))
+                  (local [(define idx (+ 1 (strindex alltext #\newline))) ; eliminate the first line : lang line
                           (define test-rc (test-passes? after-x (substring alltext idx)))
                           (define test-msg (get-test-msg test-rc))]
                      (change-style
@@ -153,7 +158,8 @@
                        (insert test-msg (get-forward-sexp stop) (+ 22 (string-length test-msg))))
                   ) ;; // local
                   ) ;; // when
-                  ) ;; // for
+                  ) ;; // when
+             ;     ) ;; // for
                   ))
 
         (super-new)))
@@ -165,6 +171,27 @@
 ;; TODO: Clean
 (define (get-defines str) (get-def-h str (string-length str) (string-length str)  ""))
 (define (get-def-h str m n sa) (if (<= n 0) sa (if (parens-closed? (substring str m n)) (if (done-test? (substring str m n)) (get-def-h (substring str 0 m) m m (string-append (substring str n) sa)) (get-def-h (substring str 0 m) m m (string-append (substring str m) sa))) (get-def-h str (- m 1) n sa))))
+
+
+;; Precond: n comes after "(test"
+(define (start-match-end-idx str n) 
+  (if (or 
+        (< (- n 5) 0) 
+        (> (+ n 1) (string-length str))) 
+      (values n n) 
+      (start-match-end-idx-h str (- n 5) (+ n 1))))
+(define (start-match-end-idx-h str l r) 
+  (cond [(or (< l 0) (> r (string-length str))) (values (max 0 l) (min (string-length str) r))]         
+;         [(done-test? (substring str l r)) (values l r)]        
+        [(and (foldl (lambda (x y) (or y (string=? x (substring str l (min (string-length str) (+ l (string-length x))))))) #f (list "(test" "(test/exn")) (parens-closed? (substring str l r))) (values l r)]        
+        [(foldl (lambda (x y) (or y (string=? x (substring str l (min (string-length str) (+ l (string-length x))))))) #f (list "(test" "(test/exn"))  (start-match-end-idx-h str l (+ r 1))]
+        [else (start-match-end-idx-h str (- l 1) (+ r 1))]))
+
+;; n is cursor
+;;(define (start-end-idx str n) (if (or (< (- n 1) 0) (> (+ n 1) (string-length str))) (values n n) (start-end-idx-h str (- n 1) (+ n 1) 0 0)))
+;;(define (start-end-idx-h str l r nl nr) (cond [(or (< l 0) (> r (string-length str))) (values (max 0 l) (min (string-length str) r))] [(parens-closed? (substring str l r)) (values l r)] [(and (>= nl nr) (string=? (substring str l (+ l 1)) "(")) (start-end-idx-h str l (+ r 1) (+ nl 1) nr)] [(and (>= nr nl) (string=? (substring str (- r 1) r) ")")) (start-end-idx-h str (- l 1) r nl (+ nr 1))] [else (start-end-idx-h str (- l 1) (+ r 1) nl nr)]))
+
+
 
 
 (define (strindex str char) (strindex-h (string->list str) char 0))
@@ -191,12 +218,15 @@
 
   (define defn-evaluator 
     (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
+                 (exn:fail:out-of-memory? (lambda (e) oom-err))
                  ; workaround for exn:fail:out-of-memory? not terminating
                  (exn:fail:resource? (lambda (e) oom-err))
                  (exn:fail? (lambda (e) other-err))]
-                 (make-evaluator 'racket no-test-expr-str)))
+                 (parameterize [(sandbox-eval-limits '(1 20))]
+                   (make-evaluator 'racket no-test-expr-str))))
   (define test-exp 
     (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
+                 (exn:fail:out-of-memory? (lambda (e) oom-err))
                  ; workaround for exn:fail:out-of-memory? not terminating
                  (exn:fail:resource? (lambda (e) oom-err))
                  (exn:fail? (lambda (e) other-err))]
@@ -212,7 +242,7 @@
                                   ;(exn:fail:syntax? (lambda (e) syn-err))
                                  ; workaround for exn:fail:out-of-memory? not terminating
                                  (exn:fail:resource? (lambda (e) oom-err))
-                                 (exn:fail? (lambda (e) syn-err))]
+                                 (exn:fail? (lambda (e) other-err))]
                                 (with-limits 0.2 0.1 (defn-evaluator expr))))
   (define (test-rc lo-expr)
     (local [(define vals (map (lambda (x) (try-eval x)) lo-expr))

@@ -7,7 +7,7 @@
          racket/unit
          racket/match
          mrlib/switchable-button
-  	     test-engine/racket-tests
+  	 test-engine/racket-tests
          racket/sandbox
          framework
          unstable/function )
@@ -69,6 +69,10 @@
                  end-edit-sequence
                  insert
                  change-style
+                 find-newline
+                 last-position
+                 line-start-position
+                 line-end-position
                  get-text
                  set-styles-sticky)
 
@@ -98,12 +102,15 @@
         (define/private (check-range start stop)
           (let/ec k
             (for ((x (in-range start stop)))
+              ;(message-box "box" (string-append (number->string x) " " (number->string start) " " (number->string stop)))
               (define after-x
                 (get-text x (+ x test-length)))
                   (when (done-test? after-x)
-                  (local [(define test-rc (test-passes? after-x))
+                  (local [(define alltext (get-text 0 (last-position))) 
+                          (define idx (+ 1 (strindex alltext #\newline))) ; eliminate the first line : lang line
+                          (define test-rc (test-passes? after-x (substring alltext idx)))
                           (define test-msg (get-test-msg test-rc))]
-                    (change-style
+                     (change-style
                       ; This has to be inline - if it's defined at the top, styledelta will be set statically.
                          (cond  [(syntax-error? test-rc) ; syntax error
                                  (send
@@ -128,7 +135,8 @@
                                 (send
                                   (send bolddelta set-delta-foreground "white")
                                   set-delta-background "red")])
-                                x stop)
+                                ; x stop)
+                                (or (find-newline 'backward x 'eof) x) (or (find-newline 'forward x 'eof) stop))
                   ;; fyi: this has no effect
                   #;
                   (send
@@ -150,23 +158,43 @@
 
         (super-new)))
 
-;; FAULTY: WORKS ONLY IF CURSOR IS AFTER "(test"
-(define (get-start-pos-h str n acc) (if (>= (+ acc 5) (string-length (substring str acc))) -1 (if (string=? (substring str acc (+ acc 5)) "(test") acc (get-start-pos-h str n (+ 1 acc)))))
 
-(define (get-start-pos str n) (get-start-pos-h str n 0))
+(define (run-all str) 
+  (if (eval (compile (read (open-input-string str))) ns) (make-syntax-error (void)) (make-passed-test (void))))
 
-(define (get-end-pos-h str n start acc) (if (done-test? (substring str start acc)) acc (get-end-pos-h str n start (+ acc 1))))
+;; TODO: Clean
+(define (get-defines str) (get-def-h str (string-length str) (string-length str)  ""))
+(define (get-def-h str m n sa) (if (<= n 0) sa (if (parens-closed? (substring str m n)) (if (done-test? (substring str m n)) (get-def-h (substring str 0 m) m m (string-append (substring str n) sa)) (get-def-h (substring str 0 m) m m (string-append (substring str m) sa))) (get-def-h str (- m 1) n sa))))
 
-(define (get-end-pos str n) (local [(define start-idx (get-start-pos str n))] (if (< start-idx 0) -1 (get-end-pos-h str n start-idx (- n 1)))))
+
+(define (strindex str char) (strindex-h (string->list str) char 0))
+(define (strindex-h loc c acc) (if (empty? loc) -1 (if (char=? c (first loc)) acc (strindex-h (rest loc) c (+ acc 1)))))
+
+;; search fwds from n in str to find next closing bracket
+;; returns -1 on fail
+(define (get-next-closing-h str n acc)  (if (> acc (string-length str)) (string-length str) (if (not (parens-closed? (substring str n acc))) (get-next-closing-h str n (+ acc 1)) acc)))
+(define (get-next-closing str n) (if (> n (string-length str)) 0 (get-next-closing-h str n n)))
 
 
+;; searching bwds from the end of str, returns the first substring with a matching closing paren
+;; if none, returns empty string.
+(define (get-first-closing str) (get-first-closing-h str (string-length str)))
+(define (get-first-closing-h str acc) (if (< acc 0) (string-length str) (if (not (parens-closed? (substring str acc))) (get-first-closing-h str (- acc 1)) acc)))
+(define (get-first-closing-substr str) (substring str (get-first-closing str)))
 
 ; string -> (or/c boolean void)
 ; Takes a string containing a test expression, i.e. "(test exp1 exp2)"
 ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not,
 ; and (void) if either of exp1 or exp2 have bad syntax.
-; TODO: handle exceptions
-(define (test-passes? str)
+; TODO: handle exceptions, pass in lang
+(define (test-passes? str no-test-expr-str)
+
+  (define defn-evaluator 
+    (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
+                 ; workaround for exn:fail:out-of-memory? not terminating
+                 (exn:fail:resource? (lambda (e) oom-err))
+                 (exn:fail? (lambda (e) other-err))]
+                 (make-evaluator 'racket no-test-expr-str)))
   (define test-exp 
     (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
                  ; workaround for exn:fail:out-of-memory? not terminating
@@ -185,7 +213,7 @@
                                  ; workaround for exn:fail:out-of-memory? not terminating
                                  (exn:fail:resource? (lambda (e) oom-err))
                                  (exn:fail? (lambda (e) syn-err))]
-                                (with-limits 0.2 0.1 (eval expr ns))))
+                                (with-limits 0.2 0.1 (defn-evaluator expr))))
   (define (test-rc lo-expr)
     (local [(define vals (map (lambda (x) (try-eval x)) lo-expr))
             (define (foldor lst) (foldr (lambda (x y) (or x y)) #f lst))
@@ -197,7 +225,6 @@
               (if (foldand (map (lambda (x) (equal? x (first vals))) vals))
                 passd-test
                 faild-test)])))
-
   (match test-exp
     [(list (or 'check-expect 'test) actual expected)
      (test-rc (list actual expected))]

@@ -1,5 +1,6 @@
 #lang racket
 (require drracket/tool
+         drracket/tool-lib
          racket/class
          racket/gui/base
          racket/gui
@@ -127,7 +128,7 @@
                                 (send
                                   (send bolddelta set-delta-foreground "white")
                                   set-delta-background "red")])
-                               x (+ x (string-length (newline-begins-substring after-x))))
+                                x stop)
                   ;; fyi: this has no effect
                   #;
                   (send
@@ -141,7 +142,7 @@
                   (define insert-x (get-text (+ x test-length))) ; TODO: fix infinite text-adding
                     #;
                     (unless (string=? insert-x test-msg)
-                       (insert test-msg (+ stop 1) (string-length test-msg)))
+                       (insert test-msg (get-forward-sexp stop) (+ 22 (string-length test-msg))))
                   ) ;; // local
                   ) ;; // when
                   ) ;; // for
@@ -149,13 +150,30 @@
 
         (super-new)))
 
+;; FAULTY: WORKS ONLY IF CURSOR IS AFTER "(test"
+(define (get-start-pos-h str n acc) (if (>= (+ acc 5) (string-length (substring str acc))) -1 (if (string=? (substring str acc (+ acc 5)) "(test") acc (get-start-pos-h str n (+ 1 acc)))))
+
+(define (get-start-pos str n) (get-start-pos-h str n 0))
+
+(define (get-end-pos-h str n start acc) (if (done-test? (substring str start acc)) acc (get-end-pos-h str n start (+ acc 1))))
+
+(define (get-end-pos str n) (local [(define start-idx (get-start-pos str n))] (if (< start-idx 0) -1 (get-end-pos-h str n start-idx (- n 1)))))
+
+
+
 ; string -> (or/c boolean void)
 ; Takes a string containing a test expression, i.e. "(test exp1 exp2)"
 ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not,
 ; and (void) if either of exp1 or exp2 have bad syntax.
 ; TODO: handle exceptions
 (define (test-passes? str)
-  (define test-exp (read (open-input-string str)))
+  (define test-exp 
+    (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
+                 ; workaround for exn:fail:out-of-memory? not terminating
+                 (exn:fail:resource? (lambda (e) oom-err))
+                 (exn:fail? (lambda (e) other-err))]
+      (read (open-input-string str))))
+
   (define syn-err (make-syntax-error (void)))
   (define oom-err (make-out-of-memory-error (void)))
   (define other-err (make-other-error (void)))
@@ -179,6 +197,7 @@
               (if (foldand (map (lambda (x) (equal? x (first vals))) vals))
                 passd-test
                 faild-test)])))
+
   (match test-exp
     [(list (or 'check-expect 'test) actual expected)
      (test-rc (list actual expected))]

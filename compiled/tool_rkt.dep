@@ -1,1 +1,0 @@
-("5.3.6" ("b752d27d31351a388ed3257dca9c4db5762b0453" . "999e66690f530e8e7612efe626d00b44ebf1b91d") (collects #"mrlib" #"switchable-button.rkt") (collects #"racket" #"gui" #"base.rkt") (collects #"drracket" #"tool.rkt") (collects #"racket" #"base.rkt") (collects #"racket" #"class.rkt") (collects #"racket" #"unit.rkt") (collects #"racket" #"base" #"lang" #"reader.rkt"))

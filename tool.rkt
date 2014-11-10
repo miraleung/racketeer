@@ -27,20 +27,7 @@
 (define bolddelta (make-object style-delta% 'change-weight 'bold))
 ;(send bolddelta set-weight-on 'bold)
 ;(send bolddelta set-weight-off 'normal)
-; Doesn't work for switching styles: sets it statically
-;(define whitetextdelta (send bolddelta set-delta-foreground "white"))
-;(define blacktextdelta (send bolddelta set-delta-foreground "black"))
-;(define failstyledelta (send whitetextdelta set-delta-background "red"))
 
-; Doesn't work either
-#;
-(define pass-styledelta
-  (local [(define blacktextdelta (send bolddelta set-delta-foreground "black"))]
-    (send blacktextdelta set-delta-background "green")))
-#;
-(define fail-styledelta
-  (local [(define whitetextdelta (send bolddelta set-delta-foreground "white"))]
-    (send whitetextdelta set-delta-background "red")))
 
 (define (boolean->string b) (if b "#t" "#f"))
 (define pass-test-msg "; yay, it passed")
@@ -50,12 +37,9 @@
 (define oth-error-msg "; error occurred ")
 (define test-msg-len (string-length pass-test-msg))
 
-;(define secret-key "(test (+ 2 1) (+ 1 2))")
-;(define secret-key2 "(test (+ 2 1) (+ 1 1))")
-;(define test-start "(test")
+
 (define test-length 70)
 ;; TODO: Test keyword support is currently not abstract enough.
-;(define test-keywords (list "test" "check-expect"))
 
 (define tool@
   (unit
@@ -81,7 +65,6 @@
         (define/augment (on-insert start len)
           (begin-edit-sequence))
         (define/augment (after-insert start len)
-;(message-box "a" (string-append (number->string start) " " (number->string len) " " (number->string (or (find-newline 'backward) -1)) " " (number->string (or (find-newline) -1))))
           (check-range (max 0 (- start test-length))
                        (+ start len))
           (end-edit-sequence))
@@ -103,15 +86,13 @@
         (define/private (check-range start stop)
           (let/ec k
              (define alltext (get-text 0 (last-position)))
-; (message-box "b" (string-append (number->string start) " " (number->string x) " " (number->string x-end) alltext))
-;            (for ((x (in-range start stop)))
+            ;(for ((x (in-range start stop)))
             ; (for ((x (list "(test" "(test/exn" "(test/pred" "(check-expect" "(check-error")))
               (define-values (x x-end) (start-match-end-idx alltext stop))
               (when (and (> x 0) (not (= x x-end)))
               (define after-x
                 (get-text x x-end))
                   (when (done-test? after-x)
-;(message-box "a" (string-append (number->string x) " "(number->string x-end) " " after-x))
                   (local [(define idx (+ 1 (strindex alltext #\newline))) ; eliminate the first line : lang line
                           (define test-rc (test-passes? after-x (substring alltext idx)))
                           (define test-msg (get-test-msg test-rc))]
@@ -142,15 +123,6 @@
                                   set-delta-background "red")])
                                 ; x stop)
                                 (or (find-newline 'backward x 'eof) x) (or (find-newline 'forward x 'eof) stop))
-                  ;; fyi: this has no effect
-                  #;
-                  (send
-                    (send (make-object style-delta% 'change-weight 'base) set-delta-foreground "black")
-                    set-delta-background "white")
-                  #;
-                  (if (string=? test-msg oom-error-msg) ;; this works, but pops up like 10 times
-                      (message-box "Racketeer" "Out of memory!")
-                      (void))
                   #;
                   (define insert-x (get-text (+ x test-length))) ; TODO: fix infinite text-adding
                     #;
@@ -168,12 +140,12 @@
 (define (run-all str) 
   (if (eval (compile (read (open-input-string str))) ns) (make-syntax-error (void)) (make-passed-test (void))))
 
-;; TODO: Clean
+;; An attempt at getting the exprs that start with define
 (define (get-defines str) (get-def-h str (string-length str) (string-length str)  ""))
 (define (get-def-h str m n sa) (if (<= n 0) sa (if (parens-closed? (substring str m n)) (if (done-test? (substring str m n)) (get-def-h (substring str 0 m) m m (string-append (substring str n) sa)) (get-def-h (substring str 0 m) m m (string-append (substring str m) sa))) (get-def-h str (- m 1) n sa))))
 
 
-;; Precond: n comes after "(test"
+;; Precond: n comes after "(test", a test expr header, not hardcoded
 (define (start-match-end-idx str n) 
   (if (or 
         (< (- n 5) 0) 
@@ -181,10 +153,17 @@
       (values n n) 
       (start-match-end-idx-h str (- n 5) (+ n 1))))
 (define (start-match-end-idx-h str l r) 
-  (cond [(or (< l 0) (> r (string-length str))) (values (max 0 l) (min (string-length str) r))]         
-;         [(done-test? (substring str l r)) (values l r)]        
-        [(and (foldl (lambda (x y) (or y (string=? x (substring str l (min (string-length str) (+ l (string-length x))))))) #f (list "(test" "(test/exn")) (parens-closed? (substring str l r))) (values l r)]        
-        [(foldl (lambda (x y) (or y (string=? x (substring str l (min (string-length str) (+ l (string-length x))))))) #f (list "(test" "(test/exn"))  (start-match-end-idx-h str l (+ r 1))]
+  (cond [(or (< l 0) (> r (string-length str))) (values (max 0 l) (min (string-length str) r))]               
+        [(and 
+           (foldl 
+             (lambda (x y) (or y (string=? x (substring str l (min (string-length str) (+ l (string-length x))))))) 
+             #f (list "(test" "(test/exn")) 
+           (parens-closed? (substring str l r))) 
+         (values l r)]        
+        [(foldl 
+           (lambda (x y) (or y (string=? x (substring str l (min (string-length str) (+ l (string-length x))))))) 
+           #f (list "(test" "(test/exn"))  
+         (start-match-end-idx-h str l (+ r 1))]
         [else (start-match-end-idx-h str (- l 1) (+ r 1))]))
 
 ;; n is cursor
@@ -199,14 +178,27 @@
 
 ;; search fwds from n in str to find next closing bracket
 ;; returns -1 on fail
-(define (get-next-closing-h str n acc)  (if (> acc (string-length str)) (string-length str) (if (not (parens-closed? (substring str n acc))) (get-next-closing-h str n (+ acc 1)) acc)))
-(define (get-next-closing str n) (if (> n (string-length str)) 0 (get-next-closing-h str n n)))
+(define (get-next-closing-h str n acc) 
+  (if (> acc (string-length str)) 
+    (string-length str)
+     (if (not (parens-closed? (substring str n acc))) 
+         (get-next-closing-h str n (+ acc 1)) 
+         acc)))
+
+(define (get-next-closing str n) 
+  (if (> n (string-length str)) 0 (get-next-closing-h str n n)))
 
 
 ;; searching bwds from the end of str, returns the first substring with a matching closing paren
 ;; if none, returns empty string.
 (define (get-first-closing str) (get-first-closing-h str (string-length str)))
-(define (get-first-closing-h str acc) (if (< acc 0) (string-length str) (if (not (parens-closed? (substring str acc))) (get-first-closing-h str (- acc 1)) acc)))
+(define (get-first-closing-h str acc) 
+  (if (< acc 0) 
+    (string-length str) 
+    (if (not (parens-closed? (substring str acc))) 
+      (get-first-closing-h str (- acc 1)) 
+      acc)))
+
 (define (get-first-closing-substr str) (substring str (get-first-closing str)))
 
 ; string -> (or/c boolean void)

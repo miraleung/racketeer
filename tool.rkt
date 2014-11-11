@@ -96,7 +96,7 @@
 				 (parameterize [(sandbox-eval-limits '(1 20))]
                    (make-module-evaluator no-tests))))
 		(when evaluator
-		(message-box "test" (string-append "made evaluator for:\n\n" no-tests)) 
+		;(message-box "test" (string-append "made evaluator for:\n\n" no-tests)) 
 			(for ([test-pos (test-locations alltext)])
 					  (local [(define test-start (car test-pos))
 							  (define test-end (cdr test-pos))
@@ -277,7 +277,7 @@
     [(list 'test/exn actual str)
      (if (not (string? str))
        syn-err
-       (if (and (string? str) (syntax-error? (try-eval actual))) ; <- this should be other-error, once syntax-matching is fixed.
+       (if (and (string? str) (other-error? (try-eval actual))) ; <- this should be other-error, once syntax-matching is fixed.
          passd-test
          faild-test))]
     [(list 'check-error actual)

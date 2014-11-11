@@ -65,24 +65,34 @@
                  get-text
                  set-styles-sticky)
 
-        (define/augment (on-change-style start len)
+        (define/augment (on-insert start len)
           (begin-edit-sequence))
-        (define/augment (after-change-style start len)
-          (check-range (max 0 (- start test-length))
-                       start)
+        (define/augment (after-insert start len)
+          (check-range start (+ start len))
+          (end-edit-sequence))
+        
+        (define/augment (on-delete start len)
+          (begin-edit-sequence))
+        (define/augment (after-delete start len)
+          (check-range start (+ start len))
+          (end-edit-sequence))
+        
+        #;(define/augment (on-change-style start len)
+          (begin-edit-sequence))
+        #;(define/augment (after-change-style start len)
+          (check-range (max 0 (- start 1)) start)
           (end-edit-sequence))
 
         (define/private (check-range start stop)
           (let/ec k
              (define alltext (get-text 0 (last-position)))
-              (define-values (x x-end) (start-match-end-idx alltext stop))
-              (when (and (> x 0) (not (= x x-end)))
-              (define after-x
-                (get-text x x-end))
-                  (when (done-test? after-x)
-                  (local [(define idx (+ 1 (strindex alltext #\newline))) ; eliminate the first line : lang line
-                          (define test-rc (test-passes? after-x (substring alltext idx)))
+            (for ([test-pos (test-locations alltext)])
+                  (local [(define test-start (car test-pos))
+                          (define test-end (cdr test-pos))
+                          (define test-exp (get-text test-start test-end))
+                          (define test-rc (test-passes? test-exp alltext))
                           (define test-msg (get-test-msg test-rc))]
+						  ;(message-box "test" (string-append "Testing:\n" test-exp "\n\nResult:\n" test-msg))
                      (change-style
                       ; This has to be inline - if it's defined at the top, styledelta will be set statically.
                          (cond  [(syntax-error? test-rc) ; syntax error
@@ -108,17 +118,11 @@
                                 (send
                                   (send bolddelta set-delta-foreground "white")
                                   set-delta-background "red")])
-                                ; x stop)
-                                (or (find-newline 'backward x 'eof) x) (or (find-newline 'forward x 'eof) stop))
-                  #;
-                  (define insert-x (get-text (+ x test-length))) ; TODO: fix infinite text-adding
-                    #;
-                    (unless (string=? insert-x test-msg)
-                       (insert test-msg (get-forward-sexp stop) (+ 22 (string-length test-msg))))
+                                test-start test-end)
                   ) ;; // local
                   ) ;; // when
-                  ) ;; // when
-                  ))
+				  ) ;; // for
+                  )
 
         (super-new)))
 
@@ -131,26 +135,62 @@
 (define (get-def-h str m n sa) (if (<= n 0) sa (if (parens-closed? (substring str m n)) (if (done-test? (substring str m n)) (get-def-h (substring str 0 m) m m (string-append (substring str n) sa)) (get-def-h (substring str 0 m) m m (string-append (substring str m) sa))) (get-def-h str (- m 1) n sa))))
 
 
-;; Precond: n comes after "(test", a test expr header, not hardcoded
-(define (start-match-end-idx str n) 
-  (if (or 
-        (< (- n 5) 0) 
-        (> (+ n 1) (string-length str))) 
-      (values n n) 
-      (start-match-end-idx-h str (- n 5) (+ n 1))))
-(define (start-match-end-idx-h str l r) 
-  (cond [(or (< l 0) (> r (string-length str))) (values (max 0 l) (min (string-length str) r))]               
-        [(and 
-           (foldl 
-             (lambda (x y) (or y (string=? x (substring str l (min (string-length str) (+ l (string-length x))))))) 
-             #f (list "(test" "(test/exn")) 
-           (parens-closed? (substring str l r))) 
-         (values l r)]        
-        [(foldl 
-           (lambda (x y) (or y (string=? x (substring str l (min (string-length str) (+ l (string-length x))))))) 
-           #f (list "(test" "(test/exn"))  
-         (start-match-end-idx-h str l (+ r 1))]
-        [else (start-match-end-idx-h str (- l 1) (+ r 1))]))
+(define test-statements (list "test" "test/exn" "test/pred" "check-error" "check-expect"))
+    (define test-regexes (map (lambda (x) (regexp (string-append "[\\(\\[\\{][ \\s]*" x "[ \\s\\(\\[\\{]"))) test-statements))
+    
+    (define (test-statement? str)
+      (ormap (lambda (x) (regexp-match? x str)) test-regexes))
+    
+    (define brackets 
+      (make-hash 
+       (list (cons #\( #\))
+             (cons #\[ #\])
+             (cons #\{ #\}))))
+    
+    (define (get-tests-in-range str l r)
+      (define test-positions (test-locations str))
+      (filter (lambda (x) (and (< l (cdr x)) (> r (car x)))) test-positions))
+    
+    (define (get-tests str)
+      (define test-positions (test-locations str))
+      (map (lambda (x) (substring str (car x) (cdr x))) test-positions))
+    
+    (define (get-test-expr str n)
+      (define-values (start end) (start-match-end-idx str n))
+      (and start end (substring str start end)))
+    
+    (define (start-match-end-idx str n) 
+      (define tests (filter (lambda (l) (and (<= (car l) n) (< n (cdr l)))) (test-locations str)))
+      (if (empty? tests)
+          (values #f #f)
+          (values (car (first tests)) (cdr (first tests)))))
+    
+    (define (test-locations str)
+      (reverse (remove-outer-tests (filter cdr (map (lambda (x) (cons x (match-bracket str x))) (test-statement-positions str))) '())))
+    
+    (define (remove-outer-tests tests acc)
+      (cond [(empty? tests) acc]
+            [(empty? (rest tests)) (cons (first tests) acc)]
+            [(> (cdr (first tests)) (cdr (first (rest tests)))) (remove-outer-tests (rest tests) acc)]
+            [else (remove-outer-tests (rest tests) (cons (first tests) acc))]))
+    
+    (define (test-statement-positions str)
+      (map car (foldr append empty (map (lambda (r) (regexp-match-positions* r str)) test-regexes))))
+    
+    ; Precondition: the starting index must be the index of a left bracket, or else #f is returned.
+    ; Returns the position after the matching right bracket or #f if no match is found.
+    (define (match-bracket str pos)
+      (define first-char (string-ref str pos))
+      (and (hash-has-key? brackets first-char)
+           (match-bracket-helper str (+ pos 1) first-char (hash-ref brackets first-char) 1)))
+    
+    (define (match-bracket-helper str pos l-char r-char count)
+      (cond [(= count 0) pos]
+            [(>= pos (string-length str)) #f]
+            [(char=? l-char (string-ref str pos)) (match-bracket-helper str (+ 1 pos) l-char r-char (+ count 1))]
+            [(char=? r-char (string-ref str pos)) (match-bracket-helper str (+ 1 pos) l-char r-char (- count 1))]
+            [else (match-bracket-helper str (+ 1 pos) l-char r-char count)]))
+    
 
 ;; n is cursor
 ;;(define (start-end-idx str n) (if (or (< (- n 1) 0) (> (+ n 1) (string-length str))) (values n n) (start-end-idx-h str (- n 1) (+ n 1) 0 0)))
@@ -190,7 +230,7 @@
 ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not,
 ; and (void) if either of exp1 or exp2 have bad syntax.
 ; TODO: handle exceptions, pass in lang
-(define (test-passes? str no-test-expr-str)
+(define (test-passes? str alltext)
 
   (define defn-evaluator 
     (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
@@ -199,7 +239,7 @@
                  (exn:fail:resource? (lambda (e) oom-err))
                  (exn:fail? (lambda (e) other-err))]
                  (parameterize [(sandbox-eval-limits '(1 20))]
-                   (make-evaluator 'racket no-test-expr-str))))
+                   (make-module-evaluator alltext))))
   (define test-exp 
     (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
                  (exn:fail:out-of-memory? (lambda (e) oom-err))
@@ -402,4 +442,3 @@
 
     (drracket:get/extend:extend-definitions-text easter-egg-mixin)
     (drracket:get/extend:extend-unit-frame reverse-button-mixin)))
-

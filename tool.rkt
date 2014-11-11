@@ -96,7 +96,7 @@
 				 (parameterize [(sandbox-eval-limits '(1 20))]
                    (make-module-evaluator no-tests))))
 		(when evaluator
-		(message-box "test" (string-append "made evaluator for:\n\n" no-tests)) 
+		;(message-box "test" (string-append "made evaluator for:\n\n" no-tests)) 
 			(for ([test-pos (test-locations alltext)])
 					  (local [(define test-start (car test-pos))
 							  (define test-end (cdr test-pos))

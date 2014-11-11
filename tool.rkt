@@ -29,7 +29,12 @@
 (define-struct out-of-memory-error (void))
 (define-struct other-error (void)) ; meant for exceptions
 
-(define bolddelta (make-object style-delta% 'change-weight 'bold))
+;(define bolddelta (make-object style-delta% 'change-weight 'bold))
+(define pass-delta (send (send (make-object style-delta% 'change-weight 'bold) set-delta-foreground "black") set-delta-background "green"))
+(define fail-delta (send (send (make-object style-delta% 'change-weight 'bold) set-delta-foreground "white") set-delta-background "red"))
+(define syn-error-delta (send (send (make-object style-delta% 'change-weight 'bold) set-delta-foreground "black") set-delta-background "yellow"))
+(define oom-error-delta (send (send (make-object style-delta% 'change-weight 'bold) set-delta-foreground "white") set-delta-background "blue"))
+(define oth-error-delta (send (send (make-object style-delta% 'change-weight 'bold) set-delta-foreground "white") set-delta-background "purple"))
 ;(send bolddelta set-weight-on 'bold)
 ;(send bolddelta set-weight-off 'normal)
 
@@ -86,43 +91,30 @@
         (define/private (check-range start stop)
           (let/ec k
              (define alltext (get-text 0 (last-position)))
-            (for ([test-pos (test-locations alltext)])
-                  (local [(define test-start (car test-pos))
-                          (define test-end (cdr test-pos))
-                          (define test-exp (get-text test-start test-end))
-                          (define test-rc (test-passes? test-exp alltext))
-                          (define test-msg (get-test-msg test-rc))]
-						  ;(message-box "test" (string-append "Testing:\n" test-exp "\n\nResult:\n" test-msg))
-                     (change-style
-                      ; This has to be inline - if it's defined at the top, styledelta will be set statically.
-                         (cond  [(syntax-error? test-rc) ; syntax error
-                                 (send
-                                  (send bolddelta ; (make-object style-delta% 'change-weight 'base)
-                                        set-delta-foreground "black")
-                                   set-delta-background "yellow")]
-                                [(other-error? test-rc) ; exception
-                                 (send
-                                  (send bolddelta
-                                        set-delta-foreground "white")
-                                   set-delta-background "purple")]
-                                [(out-of-memory-error? test-rc) ; exception
-                                 (send
-                                  (send bolddelta
-                                        set-delta-foreground "white")
-                                   set-delta-background "blue")]
-                                [(passed-test? test-rc) ; pass
-                                  (send
-                                    (send bolddelta set-delta-foreground "black")
-                                  set-delta-background "green")]
-                               [(failed-test? test-rc) ; fail
-                                (send
-                                  (send bolddelta set-delta-foreground "white")
-                                  set-delta-background "red")])
-                                test-start test-end)
-                  ) ;; // local
-                  ) ;; // when
-				  ) ;; // for
-                  )
+			 (define evaluator (with-handlers [(exn:fail? (lambda (e) #f))]
+				 (parameterize [(sandbox-eval-limits '(1 20))]
+                   (make-module-evaluator alltext))))
+		(when evaluator
+		;(message-box "test" (string-append "made evaluator for:\n\n" alltext)) 
+			(for ([test-pos (test-locations alltext)])
+					  (local [(define test-start (car test-pos))
+							  (define test-end (cdr test-pos))
+							  (define test-exp (get-text test-start test-end))
+							  (define test-rc (test-passes? test-exp evaluator))
+							  (define test-msg (get-test-msg test-rc))]
+							  ;(message-box "test" (string-append "Testing:\n" test-exp "\n\nResult:\n" test-msg))
+						 (change-style
+						  ; This has to be inline - if it's defined at the top, styledelta will be set statically.
+							 (cond  [(syntax-error? test-rc) syn-error-delta]
+									[(other-error? test-rc) oth-error-delta]
+									[(out-of-memory-error? test-rc) oom-error-delta]
+									[(passed-test? test-rc) pass-delta]
+								    [(failed-test? test-rc) fail-delta])
+							test-start test-end)
+					  ) ;; local
+					  ) ;; for
+					  ) ;; when
+				  ))
 
         (super-new)))
 
@@ -230,16 +222,15 @@
 ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not,
 ; and (void) if either of exp1 or exp2 have bad syntax.
 ; TODO: handle exceptions, pass in lang
-(define (test-passes? str alltext)
+(define (test-passes? str evaluator)
 
   (define defn-evaluator 
-    (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
+    (with-handlers [(exn:fail:syntax? (lambda (e) syn-err))
                  (exn:fail:out-of-memory? (lambda (e) oom-err))
                  ; workaround for exn:fail:out-of-memory? not terminating
                  (exn:fail:resource? (lambda (e) oom-err))
                  (exn:fail? (lambda (e) other-err))]
-                 (parameterize [(sandbox-eval-limits '(1 20))]
-                   (make-module-evaluator alltext))))
+                 evaluator))
   (define test-exp 
     (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
                  (exn:fail:out-of-memory? (lambda (e) oom-err))

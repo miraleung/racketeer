@@ -91,11 +91,12 @@
         (define/private (check-range start stop)
           (let/ec k
              (define alltext (get-text 0 (last-position)))
+			 (define no-tests (remove-tests alltext))
 			 (define evaluator (with-handlers [(exn:fail? (lambda (e) #f))]
 				 (parameterize [(sandbox-eval-limits '(1 20))]
-                   (make-module-evaluator alltext))))
+                   (make-module-evaluator no-tests))))
 		(when evaluator
-		;(message-box "test" (string-append "made evaluator for:\n\n" alltext)) 
+		(message-box "test" (string-append "made evaluator for:\n\n" no-tests)) 
 			(for ([test-pos (test-locations alltext)])
 					  (local [(define test-start (car test-pos))
 							  (define test-end (cdr test-pos))
@@ -125,6 +126,14 @@
 ;; An attempt at getting the exprs that start with define
 (define (get-defines str) (get-def-h str (string-length str) (string-length str)  ""))
 (define (get-def-h str m n sa) (if (<= n 0) sa (if (parens-closed? (substring str m n)) (if (done-test? (substring str m n)) (get-def-h (substring str 0 m) m m (string-append (substring str n) sa)) (get-def-h (substring str 0 m) m m (string-append (substring str m) sa))) (get-def-h str (- m 1) n sa))))
+
+(define (remove-tests str)
+	(define old-str (string-copy str))
+	(for [(test-pos (test-locations str))]
+		(for [(x (in-range (car test-pos) (cdr test-pos)))]
+			(string-set! old-str x #\space)))
+	old-str
+)
 
 
 (define test-statements (list "test" "test/exn" "test/pred" "check-error" "check-expect"))

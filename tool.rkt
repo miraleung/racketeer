@@ -57,7 +57,7 @@
     (export drracket:tool-exports^)
 
     (define easter-egg-mixin
-      (mixin ((class->interface text%)) ()
+      (mixin ((class->interface text%) editor<%>) ()
 
         (inherit begin-edit-sequence
                  end-edit-sequence
@@ -82,10 +82,11 @@
           (check-range start (+ start len))
           (end-edit-sequence))
         
-        #;(define/augment (on-change-style start len)
-          (begin-edit-sequence))
-        #;(define/augment (after-change-style start len)
-          (check-range (max 0 (- start 1)) start)
+	(define/augment (on-load-file loaded? format)
+            (begin-edit-sequence))
+
+        (define/augment (after-load-file loaded?)
+          (check-range 0 (last-position)) 
           (end-edit-sequence))
 
         (define/private (check-range start stop)

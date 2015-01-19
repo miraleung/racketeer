@@ -34,17 +34,21 @@
 
 ;; STRUCTS
 ;; Test/error struct
-(define-struct passed-test (void))
-(define-struct failed-test (linenum first-value second-value))
-(define-struct error-test (linenum error-msg))
-
 ;; state is one of STATE_PASS, STATE_FAIL, STATE_ERROR
-;; result is void if it passes, expr-value if failed, and error message otherwise
+;; linenum is the editor line number as specified in text%.
+;; start-posn is the starting position as specified in text%.
+;; Examples:
+;; Passing test: (make-test-struct STATE_PASS 10 (void) (void))
+;; Failing test: (make-test-struct STATE_FAIL 9  <actual value> [<expected value>])
+;; Error test:   (make-test-struct STATE_ERROR 2 <error message> (void))
+(define-struct test-struct (state linenum start-posn end-posn error-or-value1 value2))
+;; y-locations: the y-coordinate range of a line.
 (define-struct y-locations (top bottom))
-;; (make-test-context <syntax object> string-index expr-string-length line-number test-status)
-;; status is one of passed-test, failed-test, or error-test
-(define-struct test-context (stx posn linenum status))
 
+
+(define (passed-test? ts) (symbol=? STATE_PASS (test-struct-state ts)))
+(define (failed-test? ts) (symbol=? STATE_FAIL (test-struct-state ts)))
+(define (error-test? ts)  (symbol=? STATE_ERROR (test-struct-state ts)))
 
 ;; STYLE DEFS
 ;(define bolddelta (make-object style-delta% 'change-weight 'bold))
@@ -148,7 +152,7 @@
     (define/augment (after-insert start len)
       ;; (thread (thunk (check-range start (+ start len) HANDLER_AFTER_INSERT)))
       (end-edit-sequence)
-      (check-range start (+ start len)))
+      (thread (thunk (check-range start (+ start len)))))
 
 
     (define/augment (on-delete start len)
@@ -156,7 +160,7 @@
     (define/augment (after-delete start len)
       ;; (thread (thunk (check-range start (+ start len) HANDLER_AFTER_DELETE)))
       (end-edit-sequence)
-      (check-range start (+ start len)))
+      (thread (thunk (check-range start (+ start len)))))
 
 
     (define/augment (on-load-file loaded? format)
@@ -172,15 +176,8 @@
     (define (first-highlight-refresh)
       (sleep NEW-FILE-HIGHLIGHT-DELAY)
       (if (highlight?)
-        (thread (thunk (check-range 0 (last-position))))
+        (thread (thunk (check-range 0 (- (last-position) 1))))
         (void)))
-;      (queue-callback first-highlight-refresh-helper))
-#|
-    (define (first-highlight-refresh-helper)
-      (if (highlight?)
-        (check-range 0 (last-position))
-        (void)))
-|#
 
 (define/private (set-statusbar-label message)
   (define frame (send (get-tab) get-frame))
@@ -218,7 +215,6 @@
                 (when evaluator
                   (define tests (get-tests test-in-port))
 
-
                   ;; Clear statusbar.
                   (set! first-error-test-status #f)
                   (set! default-statusbar-message "")
@@ -231,28 +227,23 @@
                     (define test-start (max 0 (- (syntax-position test-syn) 1)))
                     (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
                     (define linenum (position-line test-start))
-                    (define test-rc (test-passes? test-syn evaluator linenum))
+                    (define test-rc
+                      (test-passes? test-syn evaluator linenum test-start test-end))
                     (define y-locns (make-y-locations (line-location linenum)
                                                       (line-location linenum #f)))
-                    (define (highlight-tests)
-                    ;  (message-box "asdf" (format "~a ~a ~a ~a ::: ~a:~a || locn: ~a ~a" test-rc test-syn test-start test-end (position-line test-start) (position-location test-start) (line-location (position-line test-start)) (line-location (position-line test-start) #f)))
-                      (change-style
-                        (cond [(error-test? test-rc)        error-delta]
-                              [(passed-test? test-rc)         pass-delta]
-                              [(failed-test? test-rc)         fail-delta])
-                        test-start test-end))
+
+                    ;; New hash table entry.
+                    (hash-set! test-table y-locns test-rc)
 
                     ;; Set the first syntax error object.
-                    ;; OPT
+                    ;; TODO: Optimization point?
                     (if (not (passed-test? test-rc))
                       (set! first-error-test-status test-rc)
                       (void))
-                    ;; New hash table entry.
-                    (hash-set! test-table y-locns test-rc)
-                    (highlight-tests)
-                    ;(queue-callback highlight-tests)
+
                     ) ;; for
-                    (set-statusbar-label (get-default-statusbar-message))
+                    (highlight-all-tests)
+                    (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
                   ) ;; when
                 ) ;; when
               ) ;; with-handlers
@@ -260,7 +251,26 @@
           ) ;; let
         ) ;; if
       ) ;; define
+
+  (define/private (highlight-all-tests)
+    (queue-callback highlight-all-tests-helper))
+
+  (define (highlight-all-tests-helper)
+    (for ([y-locn-key (hash-keys test-table)])
+      (define test-rc (hash-ref test-table y-locn-key))
+      (define test-start (test-struct-start-posn test-rc))
+      (define test-end (test-struct-end-posn test-rc))
+      (define linenum (test-struct-linenum test-rc))
+      (change-style
+        (cond [(error-test? test-rc)  error-delta]
+              [(passed-test? test-rc) pass-delta]
+              [(failed-test? test-rc) fail-delta])
+        test-start test-end)))
+
     (super-new))))
+
+
+
 
 (define (stringify prefix message)
   (string-append
@@ -271,36 +281,36 @@
       (get-output-string o))))
 
 ;; Get the line number of the test struct.
-(define (linenum-prefix test-struct)
+(define (linenum-prefix ts)
   (local [(define (format-linenum-string linenum)
             (string-append "L" (number->string linenum) ": "))]
-         (cond [(or (not test-struct)
-                    (passed-test? test-struct)) ""]
-               [(failed-test? test-struct)
-                (format-linenum-string (failed-test-linenum test-struct))]
-               [(error-test? test-struct)
-                (format-linenum-string (error-test-linenum test-struct))])))
+         (cond [(or (not ts)
+                    (passed-test? ts)) ""]
+               [(failed-test? ts)
+                (format-linenum-string (test-struct-linenum ts))]
+               [(error-test? ts)
+                (format-linenum-string (test-struct-linenum ts))])))
 
 ;; Format test messages for failed/error tests.
 ;; Use of stringify is due to unknown types of test subexpressions.
-(define (get-test-message test-struct)
+(define (get-test-message ts)
   (cond [(zero? (hash-count test-table)) ""]
-        [(not test-struct) SBAR_ALL_PASS]
-        [(passed-test? test-struct) default-statusbar-message]
-        [(failed-test? test-struct)
-         (local [(define prefix (linenum-prefix test-struct))
-                 (define value1 (failed-test-first-value test-struct))
+        [(not ts) SBAR_ALL_PASS]
+        [(passed-test? ts) default-statusbar-message]
+        [(failed-test? ts)
+         (local [(define prefix (linenum-prefix ts))
+                 (define value1 (test-struct-error-or-value1 ts))
                  (define part1 (stringify "actual value" value1))
-                 (define value2 (failed-test-second-value test-struct))
+                 (define value2 (test-struct-value2 ts))
                  (define part2
                    (if (void? value2)
                      ""
                      (stringify "; expected" value2)))]
                 (string-append prefix part1 part2))]
-        [(error-test? test-struct)
-         (string-append (linenum-prefix test-struct)
+        [(error-test? ts)
+         (string-append (linenum-prefix ts)
                         (stringify "exception"
-                                   (error-test-error-msg test-struct)))]))
+                                   (test-struct-error-or-value1 ts)))]))
 
 
 (define (get-default-statusbar-message)
@@ -346,7 +356,7 @@
 ; Takes a syntax object containing a test expression, i.e. "(test exp1 exp2)"
 ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not,
 ; and (void) if either of exp1 or exp2 have bad syntax.
-(define (test-passes? test-syn evaluator linenum)
+(define (test-passes? test-syn evaluator linenum start-position end-position)
   (define defn-evaluator
     (with-handlers [(exn:fail:syntax?         (lambda (e) (error-test (exn-message e))))
                     (exn:fail:out-of-memory?  (lambda (e) (error-test (exn-message e))))
@@ -360,9 +370,12 @@
                      (exn:fail? (lambda (e)  (error-test (exn-message e))))]
                    (syntax->datum test-syn)))
 
-  (define (error-test msg)     (make-error-test linenum msg))
-  (define passd-test  (make-passed-test (void)))
-  (define (faild-test exprval testval) (make-failed-test linenum exprval testval))
+  (define (error-test msg)
+    (make-test-struct STATE_ERROR linenum start-position end-position msg (void)))
+  (define passd-test
+    (make-test-struct STATE_PASS linenum start-position end-position (void) (void)))
+  (define (faild-test exprval testval)
+    (make-test-struct STATE_FAIL linenum start-position end-position exprval testval))
 
   (define (try-eval expr)
     (with-handlers [ ;TODO: Need a good syntax matcher
@@ -371,10 +384,22 @@
                    (with-limits 0.2 0.1 (defn-evaluator expr))))
 
   (define (test-eq actual expected)
-    (local [(define actual-val    (try-eval actual))
-            (define expected-val  (try-eval expected))]
-           (cond [(error-test? actual-val) actual-val]
-                 [(error-test? expected-val) expected-val]
+   (local [(define (process-string raw-str)
+              (string-append "\"" raw-str "\""))
+            (define actual-prime
+              (if (string? actual)
+                (process-string actual)
+                actual))
+            (define expected-prime
+              (if (string? expected)
+                (process-string expected)
+                expected))
+            (define actual-val    (try-eval actual-prime))
+            (define expected-val  (try-eval expected-prime))]
+           (cond [(and (test-struct? actual-val)
+                       (error-test? actual-val)) actual-val]
+                 [(and (test-struct? expected-val)
+                       (error-test? expected-val)) expected-val]
                  ;; Needs to be equal? instead of eq? for object comparison.
                  [else (if (equal? actual-val expected-val)
                          passd-test
@@ -402,8 +427,7 @@
                           passd-test
                           (faild-test (pred-app expr) (void)))))]
               [else (error-test "unrecognized test variant")]))] ;; TODO: Change this to other-error ??
-         ;;(thread (thunk (test-passes?-helper)))
-         ;; Record the first failed test, if any.
+
          (test-passes?-helper))
   ) ;; define (test-passes?)
 

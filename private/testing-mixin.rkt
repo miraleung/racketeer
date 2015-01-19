@@ -356,6 +356,7 @@
 ; Takes a syntax object containing a test expression, i.e. "(test exp1 exp2)"
 ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not,
 ; and (void) if either of exp1 or exp2 have bad syntax.
+; ;; TODO: Ensure that exn message contexts don't get lost on removing the subexceptions
 (define (test-passes? test-syn evaluator linenum start-position end-position)
   (define defn-evaluator
     (with-handlers [(exn:fail:syntax?         (lambda (e) (error-test (exn-message e))))
@@ -384,7 +385,8 @@
                    (with-limits 0.2 0.1 (defn-evaluator expr))))
 
   (define (test-eq actual expected)
-   (local [(define (process-string raw-str)
+   (local [ ;; Make the evaluator recognize strings.
+           (define (process-string raw-str)
               (string-append "\"" raw-str "\""))
             (define actual-prime
               (if (string? actual)

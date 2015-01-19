@@ -2,6 +2,7 @@
 
 (require drracket/tool
          drracket/tool-lib
+         (for-syntax racket/base)
          framework
          mrlib/switchable-button
          racket/class
@@ -22,14 +23,26 @@
 
 (define SBAR_ALL_PASS "All tests pass.")
 
+(define STATE_PASS 'pass)
+(define STATE_FAIL 'fail)
+(define STATE_ERROR 'error)
+
+;; Test expression constants.
+;; (or/c syntax? #f)
+(define first-error-test-status #f)
+
 ;; STRUCTS
 ;; Test/error struct
 (define-struct passed-test (void))
-(define-struct failed-test (void))
-(define-struct syntax-error (void))
-(define-struct out-of-memory-error (void))
-(define-struct other-error (void)) ; meant for exceptions
+(define-struct failed-test (first-value second-value))
+(define-struct error-test (error-msg))
 
+;; state is one of STATE_PASS, STATE_FAIL, STATE_ERROR
+;; result is void if it passes, expr-value if failed, and error message otherwise
+(define-struct y-locations (top bottom))
+;; (make-test-context <syntax object> string-index expr-string-length line-number test-status)
+;; status is one of passed-test, failed-test, or error-test
+(define-struct test-context (stx posn linenum status))
 
 
 ;; STYLE DEFS
@@ -38,27 +51,15 @@
                                set-delta-foreground "black") set-delta-background "green"))
 (define fail-delta (send (send (make-object style-delta% 'change-weight 'bold)
                                set-delta-foreground "white") set-delta-background "red"))
-(define syn-error-delta (send (send (make-object style-delta% 'change-weight 'bold)
+(define error-delta (send (send (make-object style-delta% 'change-weight 'bold)
                                     set-delta-foreground "black") set-delta-background "yellow"))
-(define oom-error-delta (send (send (make-object style-delta% 'change-weight 'bold)
-                                    set-delta-foreground "white") set-delta-background "blue"))
-(define oth-error-delta (send (send (make-object style-delta% 'change-weight 'bold)
-                                    set-delta-foreground "white") set-delta-background "purple"))
 (define normal-delta (send (send (make-object style-delta% 'change-weight 'normal)
                                  set-delta-foreground "black") set-delta-background "white"))
 ;(send bolddelta set-weight-on 'bold)
 ;(send bolddelta set-weight-off 'normal)
 
+(define test-table (make-hash))
 
-(define (boolean->string b) (if b "#t" "#f"))
-(define pass-test-msg "; yay, it passed")
-(define fail-test-msg "; yay, it failed")
-(define syn-error-msg "; < syntax error")
-(define oom-error-msg "; out-of-memory ")
-(define oth-error-msg "; error occurred ")
-(define test-msg-len (string-length pass-test-msg))
-
-(define first-test-error-status SBAR_ALL_PASS)
 
 (define NEW-FILE-HIGHLIGHT-DELAY 2.5) ; seconds
 
@@ -78,6 +79,9 @@
 (define racketeer<%>
   (interface ()))
 
+(define watching-mouse-events #f)
+
+
 (define racketeer-testing-mixin
  ;  (mixin ((class->interface text%) editor<%>) ()
   (lambda (cls)
@@ -91,8 +95,12 @@
              get-text
              insert
              last-position
-             line-start-position
              line-end-position
+             line-length
+             line-location
+             line-start-position
+             position-line
+             position-location
              save-port
              set-styles-sticky)
 
@@ -103,28 +111,67 @@
                          (preferences:set 'drracket:racketeer-highlight-tests? (not highlight-tests?))
                          (set! highlight-tests? (not highlight-tests?)))
 
+
+    ;; MOUSE EVENT HANDLER
+    (define/override (on-event mouse-evt)
+      (super on-event mouse-evt)
+      (thread (thunk (mouseover-test-handler (send mouse-evt get-y)))))
+    #;
+    (define/private (watch-mouse-events)
+      (define-values (point evt-type) (get-current-mouse-state))
+      (thread (thunk (mouseover-test-handler (send point get-y))))
+      (sleep 2)
+      (watch-mouse-events))
+
+    (define/private (mouseover-test-handler y-coord)
+      (define cursor-expr (find-test-y-range y-coord))
+      (cond [(or (not cursor-expr) (passed-test? cursor-expr))
+             (set-statusbar-label (get-default-statusbar-message))]
+            [(or (failed-test? cursor-expr) (error-test? cursor-expr))
+             (set-statusbar-label (get-test-message cursor-expr))]))
+
+
+    ;; exact-integer -> (or/c passed-test failed-test error-test #f)
+    ;; Gets the test at this line.
+    (define/private (find-test-y-range y-coord)
+      (local [(define lo-y-locns (hash-keys test-table))
+              ;; (listof y-locations) -> (or/c passed-test failed-test error-test #f)
+              (define (find-y-range y-locns)
+                (cond [(empty? y-locns) #f]
+                      [(<= (y-locations-top (first y-locns))
+                           y-coord
+                           (y-locations-bottom (first y-locns)))
+                           (hash-ref test-table (first y-locns))]
+                      [else (find-y-range (rest y-locns))]))]
+             (if (zero? (hash-count test-table))
+               #f
+               (find-y-range lo-y-locns))))
+
     ;; EVENT HANDLERS.
     (define/augment (on-insert start len)
       (begin-edit-sequence))
     (define/augment (after-insert start len)
       ;; (thread (thunk (check-range start (+ start len) HANDLER_AFTER_INSERT)))
-      (check-range start (+ start len))
-      (end-edit-sequence))
+      (end-edit-sequence)
+      (check-range start (+ start len)))
+
 
     (define/augment (on-delete start len)
       (begin-edit-sequence))
     (define/augment (after-delete start len)
       ;; (thread (thunk (check-range start (+ start len) HANDLER_AFTER_DELETE)))
-      (check-range start (+ start len))
-      (end-edit-sequence))
+      (end-edit-sequence)
+      (check-range start (+ start len)))
+
 
     (define/augment (on-load-file loaded? format)
       (begin-edit-sequence))
     (define/augment (after-load-file loaded?)
 ;      (thread (thunk (check-range 0 (last-position)))))
       ;(future (thunk first-highlight-refresh)))
-      (first-highlight-refresh)
-      (end-edit-sequence))
+      (end-edit-sequence)
+      (first-highlight-refresh))
+
       ;(send (send (send (send (get-tab) get-frame) get-cainvas) get-editor) end-edit-sequence))
 
     (define (first-highlight-refresh)
@@ -140,6 +187,11 @@
         (void)))
 |#
 
+(define/private (set-statusbar-label message)
+  (define frame (send (get-tab) get-frame))
+  (send frame set-rktr-status-message message))
+
+(define current-error "")
 
 ;; TODO: Remove handler param?
     (define/private (check-range start stop)
@@ -165,42 +217,92 @@
                 ; If anything is written to the error port while creating the evaluator,
                 ; write it to a string port
                 ; TODO: Write the contents of the string port to the status bar.
+                (define test-error-output (open-output-string))
                 (define test-output (open-output-string))
-                (define evaluator (parameterize [(sandbox-eval-limits '(1 20))
-                                                 (current-error-port test-output)]
+                (define evaluator (parameterize [(sandbox-eval-limits '(1 20))]
                                     (make-module-evaluator eval-in-port)))
                 ; The value of evaluator is #f if the source code has syntax errors.
                 (when evaluator
                   (define tests (get-tests test-in-port))
+
+                  ;; TODO: Find a refactoring to avoid checking these if conds all the time.
+                  ;; Start mouse event watcher if not already running.
+#;
+                  (if (not watching-mouse-events)
+                    (begin
+                      (set! watching-mouse-events #t)
+                      (thread (thunk (watch-mouse-events))))
+                    (void))
+
+                  ;; Clear statusbar.
+                  (set-statusbar-label "")
+                  (set! first-error-test-status #f)
+
+                  ;; Clear test hash table.
+                  (set! test-table (make-hash))
+
                   (for ([test-syn tests])
                     (define test-start (max 0 (- (syntax-position test-syn) 1)))
                     (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
                     (define test-rc (test-passes? test-syn evaluator))
-                    (define test-msg (get-test-msg test-rc))
+                    (define linenum (position-line test-start))
+                    (define y-locns (make-y-locations (line-location linenum)
+                                                      (line-location linenum #f)))
                     (define (highlight-tests)
+                    ;  (message-box "asdf" (format "~a ~a ~a ~a ::: ~a:~a || locn: ~a ~a" test-rc test-syn test-start test-end (position-line test-start) (position-location test-start) (line-location (position-line test-start)) (line-location (position-line test-start) #f)))
                       (change-style
-                        (cond [(syntax-error? test-rc)        syn-error-delta]
-                              [(other-error?  test-rc)        oth-error-delta]
-                              [(out-of-memory-error? test-rc) oom-error-delta]
+                        (cond [(error-test? test-rc)        error-delta]
                               [(passed-test? test-rc)         pass-delta]
                               [(failed-test? test-rc)         fail-delta])
                         test-start test-end))
-                    #;(message-box "test" (string-append "Testing:\n" (get-text test-start test-end) "\n\nResult:\n" test-msg))
+
+                    ;; Set the first syntax error object.
+                    ;; OPT
+                    (if (not (passed-test? test-rc))
+                      (set! first-error-test-status test-rc)
+                      (void))
+                    ;; New hash table entry.
+                    (hash-set! test-table y-locns test-rc)
                     (highlight-tests)
-;                    (queue-callback highlight-tests)
+                    ;(queue-callback highlight-tests)
                     ) ;; for
+                    (set-statusbar-label (get-default-statusbar-message))
                   ) ;; when
                 ) ;; when
               ) ;; with-handlers
-            ;; PROTOTYPING STATUS BAR
-            (when (> (string-length (get-text 0 (last-position))) 20)
-              (define frame (send (get-tab) get-frame))
-              (send frame set-rktr-status-message first-test-error-status))
             ) ;; when
           ) ;; let
         ) ;; if
       ) ;; define
     (super-new))))
+
+(define (stringify prefix message)
+  (string-append
+    prefix
+    (let [(o (open-output-string))]
+      (parameterize [(current-output-port o)]
+        (display (format ": ~a" message)))
+      (get-output-string o))))
+
+(define (get-test-message test-struct)
+  (cond [(not test-struct) SBAR_ALL_PASS]
+        [(failed-test? test-struct)
+         (local [(define value1 (failed-test-first-value test-struct))
+                 (define part1 (stringify "First value" value1))
+                 (define value2 (failed-test-second-value test-struct))
+                 (define part2
+                   (if (void? value2)
+                     ""
+                     (stringify "; second value" value2)))]
+                (string-append part1 part2))]
+        [(error-test? test-struct)
+         (stringify "Exception"
+                    (error-test-error-msg test-struct))]))
+
+
+(define (get-default-statusbar-message)
+  (get-test-message first-error-test-status))
+
 
 (define test-statements (list 'test 'test/exn 'test/pred 'check-error 'check-expect))
 
@@ -242,74 +344,63 @@
 ; and (void) if either of exp1 or exp2 have bad syntax.
 (define (test-passes? test-syn evaluator)
   (define defn-evaluator
-    (with-handlers [(exn:fail:syntax?         (lambda (e) syn-err))
-                    (exn:fail:out-of-memory?  (lambda (e) oom-err))
+    (with-handlers [(exn:fail:syntax?         (lambda (e) (error-test (exn-message e))))
+                    (exn:fail:out-of-memory?  (lambda (e) (error-test (exn-message e))))
                     ; workaround for exn:fail:out-of-memory? not terminating
-                    (exn:fail:resource?       (lambda (e) oom-err))
-                    (exn:fail?                (lambda (e) other-err))]
+                    (exn:fail:resource?       (lambda (e) (error-test (exn-message e))))
+                    (exn:fail?                (lambda (e) (error-test (exn-message e))))]
       evaluator))
 
   (define test-exp
-    (with-handlers [ (exn:fail:syntax? (lambda (e) syn-err))
-                     (exn:fail:out-of-memory? (lambda (e) oom-err))
-                     ; workaround for exn:fail:out-of-memory? not terminating
-                     (exn:fail:resource? (lambda (e) oom-err))
-                     (exn:fail? (lambda (e) other-err))]
+    (with-handlers [ (exn:fail:syntax? (lambda (e)  (error-test (exn-message e))))
+                     (exn:fail? (lambda (e)  (error-test (exn-message e))))]
                    (syntax->datum test-syn)))
 
-  (define syn-err     (make-syntax-error (void)))
-  (define oom-err     (make-out-of-memory-error (void)))
-  (define other-err   (make-other-error (void)))
+  (define (error-test msg)     (make-error-test msg))
   (define passd-test  (make-passed-test (void)))
-  (define faild-test  (make-failed-test (void)))
+  (define (faild-test exprval testval) (make-failed-test exprval testval))
 
   (define (try-eval expr)
     (with-handlers [ ;TODO: Need a good syntax matcher
-                     (exn:fail:syntax? (lambda (e) syn-err))
-                     ; workaround for exn:fail:out-of-memory? not terminating
-                     (exn:fail:resource? (lambda (e) oom-err))
-                     (exn:fail? (lambda (e) other-err))]
+                     (exn:fail:syntax? (lambda (e) (error-test (exn-message e))))
+                     (exn:fail? (lambda (e) (error-test (exn-message e))))]
                    (with-limits 0.2 0.1 (defn-evaluator expr))))
 
   (define (test-eq actual expected)
     (local [(define actual-val    (try-eval actual))
             (define expected-val  (try-eval expected))]
-           (cond [(or (syntax-error? actual-val) (syntax-error? expected-val))        syn-err] ; syntax error
-                 [(or (out-of-memory-error? actual-val) (syntax-error? expected-val)) oom-err]
-                 [(or (other-error? actual-val) (other-error? expected-val))          other-err]
-                 [else (if (eq? actual-val expected-val)
+           (cond [(error-test? actual-val) actual-val]
+                 [(error-test? expected-val) expected-val]
+                 ;; Needs to be equal? instead of eq? for object comparison.
+                 [else (if (equal? actual-val expected-val)
                          passd-test
-                         faild-test)])))
+                         (faild-test actual-val expected-val))])))
   (local [(define (test-passes?-helper)
             (match test-exp
               [(list (or 'check-expect 'test) actual expected)
                (test-eq actual expected)]
               [(list 'test/exn actual str)
                (if (not (string? str))
-                 syn-err
-                 (if (and (string? str) (other-error? (try-eval actual))) ; <- this should be other-error, once syntax-matching is fixed.
+                 (error-test "second expression must be a string")
+                 (if (and (string? str) (error-test? (try-eval actual))) ; <- this should be other-error, once syntax-matching is fixed.
                    passd-test
-                   faild-test))]
+                   (faild-test "no exception raised" (void))))]
               [(list 'check-error actual)
                ; TODO: If try-eval returns an oom-error, it should be an error struct, not a failed-struct.
-               (if (syntax-error? (try-eval actual))
+               (if (error-test? (try-eval actual))
                  passd-test
-                 faild-test)]
+                 (faild-test "no error raised" (void)))]
               [(list 'test/pred expr pred)
                (local [(define pred-app (try-eval pred))]
                       (if (not (procedure? pred-app))
-                        syn-err
+                        (error-test "second expression must be a procedure")
                         (if (pred-app expr)
                           passd-test
-                          faild-test)))]
-              [else syn-err]))] ;; TODO: Change this to other-error ??
+                          (faild-test (pred-app expr) (void)))))]
+              [else (error-test "unrecognized test variant")]))] ;; TODO: Change this to other-error ??
          ;;(thread (thunk (test-passes?-helper)))
+         ;; Record the first failed test, if any.
          (test-passes?-helper))
   ) ;; define (test-passes?)
 
-(define (get-test-msg test-rc)
-        (cond [(syntax-error? test-rc) syn-error-msg]
-          [(out-of-memory-error? test-rc) oom-error-msg]
-          [(other-error? test-rc) oth-error-msg]
-          [(passed-test? test-rc) pass-test-msg]
-          [(failed-test? test-rc) fail-test-msg]))
+

@@ -30,12 +30,13 @@
 ;; Test expression constants.
 ;; (or/c syntax? #f)
 (define first-error-test-status #f)
+(define default-statusbar-message "")
 
 ;; STRUCTS
 ;; Test/error struct
 (define-struct passed-test (void))
-(define-struct failed-test (first-value second-value))
-(define-struct error-test (error-msg))
+(define-struct failed-test (linenum first-value second-value))
+(define-struct error-test (linenum error-msg))
 
 ;; state is one of STATE_PASS, STATE_FAIL, STATE_ERROR
 ;; result is void if it passes, expr-value if failed, and error message otherwise
@@ -116,12 +117,6 @@
     (define/override (on-event mouse-evt)
       (super on-event mouse-evt)
       (thread (thunk (mouseover-test-handler (send mouse-evt get-y)))))
-    #;
-    (define/private (watch-mouse-events)
-      (define-values (point evt-type) (get-current-mouse-state))
-      (thread (thunk (mouseover-test-handler (send point get-y))))
-      (sleep 2)
-      (watch-mouse-events))
 
     (define/private (mouseover-test-handler y-coord)
       (define cursor-expr (find-test-y-range y-coord))
@@ -191,9 +186,7 @@
   (define frame (send (get-tab) get-frame))
   (send frame set-rktr-status-message message))
 
-(define current-error "")
-
-;; TODO: Remove handler param?
+;; TODO: Find a refactoring to avoid checking the inner if conds every time.
     (define/private (check-range start stop)
       ;; TODO: If highlighting is set to off, don't highlight.
       (if (and (not highlight-tests?) (> stop 20))
@@ -225,18 +218,11 @@
                 (when evaluator
                   (define tests (get-tests test-in-port))
 
-                  ;; TODO: Find a refactoring to avoid checking these if conds all the time.
-                  ;; Start mouse event watcher if not already running.
-#;
-                  (if (not watching-mouse-events)
-                    (begin
-                      (set! watching-mouse-events #t)
-                      (thread (thunk (watch-mouse-events))))
-                    (void))
 
                   ;; Clear statusbar.
-                  (set-statusbar-label "")
                   (set! first-error-test-status #f)
+                  (set! default-statusbar-message "")
+                  (set-statusbar-label default-statusbar-message)
 
                   ;; Clear test hash table.
                   (set! test-table (make-hash))
@@ -244,8 +230,8 @@
                   (for ([test-syn tests])
                     (define test-start (max 0 (- (syntax-position test-syn) 1)))
                     (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
-                    (define test-rc (test-passes? test-syn evaluator))
                     (define linenum (position-line test-start))
+                    (define test-rc (test-passes? test-syn evaluator linenum))
                     (define y-locns (make-y-locations (line-location linenum)
                                                       (line-location linenum #f)))
                     (define (highlight-tests)
@@ -284,24 +270,41 @@
         (display (format ": ~a" message)))
       (get-output-string o))))
 
+;; Get the line number of the test struct.
+(define (linenum-prefix test-struct)
+  (local [(define (format-linenum-string linenum)
+            (string-append "L" (number->string linenum) ": "))]
+         (cond [(or (not test-struct)
+                    (passed-test? test-struct)) ""]
+               [(failed-test? test-struct)
+                (format-linenum-string (failed-test-linenum test-struct))]
+               [(error-test? test-struct)
+                (format-linenum-string (error-test-linenum test-struct))])))
+
+;; Format test messages for failed/error tests.
+;; Use of stringify is due to unknown types of test subexpressions.
 (define (get-test-message test-struct)
   (cond [(not test-struct) SBAR_ALL_PASS]
+        [(passed-test? test-struct) default-statusbar-message]
         [(failed-test? test-struct)
-         (local [(define value1 (failed-test-first-value test-struct))
-                 (define part1 (stringify "First value" value1))
+         (local [(define prefix (linenum-prefix test-struct))
+                 (define value1 (failed-test-first-value test-struct))
+                 (define part1 (stringify "actual value" value1))
                  (define value2 (failed-test-second-value test-struct))
                  (define part2
                    (if (void? value2)
                      ""
-                     (stringify "; second value" value2)))]
-                (string-append part1 part2))]
+                     (stringify "; expected" value2)))]
+                (string-append prefix part1 part2))]
         [(error-test? test-struct)
-         (stringify "Exception"
-                    (error-test-error-msg test-struct))]))
+         (string-append (linenum-prefix test-struct)
+                        (stringify "exception"
+                                   (error-test-error-msg test-struct)))]))
 
 
 (define (get-default-statusbar-message)
-  (get-test-message first-error-test-status))
+  (set! default-statusbar-message (get-test-message first-error-test-status))
+  default-statusbar-message)
 
 
 (define test-statements (list 'test 'test/exn 'test/pred 'check-error 'check-expect))
@@ -342,7 +345,7 @@
 ; Takes a syntax object containing a test expression, i.e. "(test exp1 exp2)"
 ; Returns #t if exp1 and exp2 evaluate to the same value, #f if not,
 ; and (void) if either of exp1 or exp2 have bad syntax.
-(define (test-passes? test-syn evaluator)
+(define (test-passes? test-syn evaluator linenum)
   (define defn-evaluator
     (with-handlers [(exn:fail:syntax?         (lambda (e) (error-test (exn-message e))))
                     (exn:fail:out-of-memory?  (lambda (e) (error-test (exn-message e))))
@@ -356,9 +359,9 @@
                      (exn:fail? (lambda (e)  (error-test (exn-message e))))]
                    (syntax->datum test-syn)))
 
-  (define (error-test msg)     (make-error-test msg))
+  (define (error-test msg)     (make-error-test linenum msg))
   (define passd-test  (make-passed-test (void)))
-  (define (faild-test exprval testval) (make-failed-test exprval testval))
+  (define (faild-test exprval testval) (make-failed-test linenum exprval testval))
 
   (define (try-eval expr)
     (with-handlers [ ;TODO: Need a good syntax matcher

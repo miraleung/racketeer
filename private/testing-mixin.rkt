@@ -284,7 +284,8 @@
 ;; Format test messages for failed/error tests.
 ;; Use of stringify is due to unknown types of test subexpressions.
 (define (get-test-message test-struct)
-  (cond [(not test-struct) SBAR_ALL_PASS]
+  (cond [(zero? (hash-count test-table)) ""]
+        [(not test-struct) SBAR_ALL_PASS]
         [(passed-test? test-struct) default-statusbar-message]
         [(failed-test? test-struct)
          (local [(define prefix (linenum-prefix test-struct))

@@ -47,7 +47,7 @@
             (new message%
                  [parent rktr-status-panel]
                  [auto-resize #t]
-                 [label "text will go here"]))
+                 [label "Racketeer Status Bar"]))
       root)
 
     ;; Message handler.

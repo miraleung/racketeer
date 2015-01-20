@@ -186,10 +186,12 @@
 ;; TODO: Find a refactoring to avoid checking the inner if conds every time.
     (define/private (check-range start stop)
       ;; TODO: If highlighting is set to off, don't highlight.
+      ;; TODO: Remove > stop 20 and if -> when, when fixing the highlighting on-off preference.
       (if (and (not highlight-tests?) (> stop 20))
         (send (send (get-tab) get-frame) set-rktr-status-message "")
         (void))
 
+      ;; TODO: Refactor to when-expression.
       (if (not highlight-tests?)
         (void)
         (let/ec k
@@ -237,6 +239,7 @@
 
                     ;; Set the first syntax error object.
                     ;; TODO: Optimization point?
+                    ;; TODO: Change to when-expression
                     (if (not (passed-test? test-rc))
                       (set! first-error-test-status test-rc)
                       (void))
@@ -283,7 +286,7 @@
 ;; Get the line number of the test struct.
 (define (linenum-prefix ts)
   (local [(define (format-linenum-string linenum)
-            (string-append "L" (number->string linenum) ": "))]
+            (string-append "line " (number->string (+ 1 linenum)) ": "))]
          (cond [(or (not ts)
                     (passed-test? ts)) ""]
                [(failed-test? ts)

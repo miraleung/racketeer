@@ -2,7 +2,6 @@
 
 (require drracket/tool
          drracket/tool-lib
-         (for-syntax racket/base)
          framework
          mrlib/switchable-button
          racket/class
@@ -51,18 +50,24 @@
 (define (error-test? ts)  (symbol=? STATE_ERROR (test-struct-state ts)))
 
 ;; STYLE DEFS
+(define pass-delta (send (make-object style-delta% 'change-weight 'bold)  set-delta-background "green"))
+(define fail-delta (send (make-object style-delta% 'change-weight 'bold)  set-delta-background "red"))
+(define error-delta (send (make-object style-delta% 'change-weight 'bold) set-delta-background "yellow"))
+(define normal-delta (send (make-object style-delta% 'change-weight 'normal) set-delta-background "white"))
+
 ;(define bolddelta (make-object style-delta% 'change-weight 'bold))
+#|
 (define pass-delta (send (send (make-object style-delta% 'change-weight 'bold)
                                set-delta-foreground "black") set-delta-background "green"))
 (define fail-delta (send (send (make-object style-delta% 'change-weight 'bold)
                                set-delta-foreground "white") set-delta-background "red"))
 (define error-delta (send (send (make-object style-delta% 'change-weight 'bold)
                                     set-delta-foreground "black") set-delta-background "yellow"))
-(define normal-delta (send (send (make-object style-delta% 'change-weight 'normal)
+(define normal-delta (send (send (make-object style-delta% 'change-normal 'base)
                                  set-delta-foreground "black") set-delta-background "white"))
 ;(send bolddelta set-weight-on 'bold)
 ;(send bolddelta set-weight-off 'normal)
-
+|#
 (define test-table (make-hash))
 
 
@@ -114,7 +119,11 @@
     (define/public-final (highlight?) highlight-tests?)
     (define/public-final (toggle-highlight!)
                          (preferences:set 'drracket:racketeer-highlight-tests? (not highlight-tests?))
-                         (set! highlight-tests? (not highlight-tests?)))
+                         (set! highlight-tests? (not highlight-tests?))
+                         (if (highlight?)
+                            (thread (thunk (check-range 0 (- (last-position) 1))))
+                            ;; TODO: re-highlight with syntax check using global syntax object
+                            (thread (thunk (un-highlight-all-tests)))))
 
 
     ;; MOUSE EVENT HANDLER
@@ -150,7 +159,6 @@
     (define/augment (on-insert start len)
       (begin-edit-sequence))
     (define/augment (after-insert start len)
-      ;; (thread (thunk (check-range start (+ start len) HANDLER_AFTER_INSERT)))
       (end-edit-sequence)
       (thread (thunk (check-range start (+ start len)))))
 
@@ -158,7 +166,6 @@
     (define/augment (on-delete start len)
       (begin-edit-sequence))
     (define/augment (after-delete start len)
-      ;; (thread (thunk (check-range start (+ start len) HANDLER_AFTER_DELETE)))
       (end-edit-sequence)
       (thread (thunk (check-range start (+ start len)))))
 
@@ -166,34 +173,25 @@
     (define/augment (on-load-file loaded? format)
       (begin-edit-sequence))
     (define/augment (after-load-file loaded?)
-;      (thread (thunk (check-range 0 (last-position)))))
-      ;(future (thunk first-highlight-refresh)))
       (end-edit-sequence)
       (first-highlight-refresh))
 
-      ;(send (send (send (send (get-tab) get-frame) get-cainvas) get-editor) end-edit-sequence))
 
     (define (first-highlight-refresh)
       (sleep NEW-FILE-HIGHLIGHT-DELAY)
-      (if (highlight?)
-        (thread (thunk (check-range 0 (- (last-position) 1))))
-        (void)))
+      (when (highlight?)
+        (thread (thunk (check-range 0 (- (last-position) 1))))))
 
 (define/private (set-statusbar-label message)
   (define frame (send (get-tab) get-frame))
   (send frame set-rktr-status-message message))
 
-;; TODO: Find a refactoring to avoid checking the inner if conds every time.
-    (define/private (check-range start stop)
-      ;; TODO: If highlighting is set to off, don't highlight.
-      ;; TODO: Remove > stop 20 and if -> when, when fixing the highlighting on-off preference.
-      (if (and (not highlight-tests?) (> stop 20))
-        (send (send (get-tab) get-frame) set-rktr-status-message "")
-        (void))
 
-      ;; TODO: Refactor to when-expression.
-      (if (not highlight-tests?)
-        (void)
+    (define/private (check-range start stop)
+      (when (not (highlight?))
+        (send (send (get-tab) get-frame) set-rktr-status-message ""))
+
+      (when (highlight?)
         (let/ec k
           (define src-out-port (open-output-bytes))
           (save-port src-out-port)
@@ -252,7 +250,7 @@
               ) ;; with-handlers
             ) ;; when
           ) ;; let
-        ) ;; if
+        ) ;; when
       ) ;; define
 
   (define/private (highlight-all-tests)
@@ -269,6 +267,10 @@
               [(passed-test? test-rc) pass-delta]
               [(failed-test? test-rc) fail-delta])
         test-start test-end)))
+
+  (define/private (un-highlight-all-tests)
+    (set! test-table (make-hash))
+    (change-style normal-delta 0 (last-position)))
 
     (super-new))))
 

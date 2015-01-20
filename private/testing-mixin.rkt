@@ -210,7 +210,7 @@
                 (define test-error-output (open-output-string))
                 (define test-output (open-output-string))
                 (define evaluator (parameterize [(sandbox-eval-limits '(1 20))]
-                                    (make-module-evaluator eval-in-port)))
+                                    (make-module-evaluator (remove-tests eval-in-port))))
                 ; The value of evaluator is #f if the source code has syntax errors.
                 (when evaluator
                   (define tests (get-tests test-in-port))
@@ -351,10 +351,28 @@
          (syntax-expander-helper to-expand empty)))
 
 (define (test-syntax? syn)
-  (local [(define expr (syntax->datum syn))]
-         (and (list? expr)
-              (not (empty? expr))
-              (member (first expr) test-statements))))
+  (test-expression? (syntax->datum syn)))
+
+(define (test-expression? expr)
+  (and (list? expr)
+       (not (empty? expr))
+       (member (first expr) test-statements)))
+
+(define (remove-tests src-port)
+  (test-remover (parameterize [(read-accept-reader  #t)
+                               (read-accept-lang    #t)]
+                  (read-syntax 'program src-port))))
+
+(define (test-remover syn)
+  (local [(define (keep-expr? expr)
+            (not (test-expression? expr)))
+          (define (test-remover-helper expr)
+            (if (list? expr)
+                (map test-remover-helper (filter keep-expr? expr))
+                expr))]
+    (if (syntax? syn)
+		(datum->syntax #f (test-remover-helper (syntax->datum syn)))
+        syn)))
 
 
 ; syntax -> (or/c boolean void)
@@ -412,9 +430,10 @@
               [(list 'test/exn actual str)
                (if (not (string? str))
                  (error-test "second expression must be a string")
-                 (if (and (string? str) (error-test? (try-eval actual))) ; <- this should be other-error, once syntax-matching is fixed.
-                   passd-test
-                   (faild-test "no exception raised" (void))))]
+				 (local [(define actual-val (try-eval actual))]
+					 (if (and (test-struct? actual-val) (error-test? actual-val)) ; <- this should be other-error, once syntax-matching is fixed.
+					   passd-test
+					   (faild-test actual-val "an exception"))))]
               [(list 'check-error actual)
                ; TODO: If try-eval returns an oom-error, it should be an error struct, not a failed-struct.
                (if (error-test? (try-eval actual))

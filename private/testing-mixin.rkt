@@ -209,7 +209,7 @@
                 ; TODO: Write the contents of the string port to the status bar.
                 (define test-error-output (open-output-string))
                 (define test-output (open-output-string))
-                (define evaluator (parameterize [(sandbox-eval-limits '(1 20))]
+                (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
                                     (make-module-evaluator (remove-tests eval-in-port))))
                 ; The value of evaluator is #f if the source code has syntax errors.
                 (when evaluator

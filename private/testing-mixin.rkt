@@ -364,17 +364,12 @@
 ; ;; TODO: Ensure that exn message contexts don't get lost on removing the subexceptions
 (define (test-passes? test-syn evaluator linenum start-position end-position)
   (define defn-evaluator
-    (with-handlers [(exn:fail:syntax?         (lambda (e) (error-test (exn-message e))))
-                    (exn:fail:out-of-memory?  (lambda (e) (error-test (exn-message e))))
-                    ; workaround for exn:fail:out-of-memory? not terminating
-                    (exn:fail:resource?       (lambda (e) (error-test (exn-message e))))
-                    (exn:fail?                (lambda (e) (error-test (exn-message e))))]
+    (with-handlers [(exn:fail? (lambda (e) (error-test (exn-message e))))]
       evaluator))
 
   (define test-exp
-    (with-handlers [ (exn:fail:syntax? (lambda (e)  (error-test (exn-message e))))
-                     (exn:fail? (lambda (e)  (error-test (exn-message e))))]
-                   (syntax->datum test-syn)))
+    (with-handlers [(exn:fail? (lambda (e)  (error-test (exn-message e))))]
+      (syntax->datum test-syn)))
 
   (define (error-test msg)
     (make-test-struct STATE_ERROR linenum start-position end-position msg (void)))
@@ -385,7 +380,6 @@
 
   (define (try-eval expr)
     (with-handlers [ ;TODO: Need a good syntax matcher
-                     (exn:fail:syntax? (lambda (e) (error-test (exn-message e))))
                      (exn:fail? (lambda (e) (error-test (exn-message e))))]
                    (with-limits 0.2 0.1 (defn-evaluator expr))))
 

@@ -59,27 +59,11 @@
 (define error-delta (send (make-object style-delta% 'change-weight 'bold) set-delta-background "yellow"))
 (define normal-delta (send (make-object style-delta% 'change-weight 'normal) set-delta-background "white"))
 
-;(define bolddelta (make-object style-delta% 'change-weight 'bold))
-#|
-(define pass-delta (send (send (make-object style-delta% 'change-weight 'bold)
-                               set-delta-foreground "black") set-delta-background "green"))
-(define fail-delta (send (send (make-object style-delta% 'change-weight 'bold)
-                               set-delta-foreground "white") set-delta-background "red"))
-(define error-delta (send (send (make-object style-delta% 'change-weight 'bold)
-                                    set-delta-foreground "black") set-delta-background "yellow"))
-(define normal-delta (send (send (make-object style-delta% 'change-normal 'base)
-                                 set-delta-foreground "black") set-delta-background "white"))
-;(send bolddelta set-weight-on 'bold)
-;(send bolddelta set-weight-off 'normal)
-|#
 (define test-table (make-hash))
 
 
 (define NEW-FILE-HIGHLIGHT-DELAY 2.5) ; seconds
 
-;; TODO: Test keyword support is currently not abstract enough.
-;; TODO: Unhighlight tests when highlighting is off
-;; get line nums
 
 (provide racketeer-testing-mixin)
 #;
@@ -100,7 +84,7 @@
   ;  (mixin ((class->interface text%) editor<%>) ()
   (lambda (cls)
     (class* cls ()
-      
+
       (inherit begin-edit-sequence
                change-style
                end-edit-sequence
@@ -117,32 +101,31 @@
                position-location
                save-port
                set-styles-sticky)
-      
+
       (define highlight-tests? (preferences:get 'drracket:racketeer-highlight-tests?))
-      
+
       (define/public-final (highlight?) highlight-tests?)
       (define/public-final (toggle-highlight!)
         (preferences:set 'drracket:racketeer-highlight-tests? (not highlight-tests?))
         (set! highlight-tests? (not highlight-tests?))
         (if (highlight?)
             (check-range 0 (- (last-position) 1))
-            ;; TODO: re-highlight with syntax check using global syntax object
             (thread (thunk (un-highlight-all-tests)))))
-      
-      
+
+
       ;; MOUSE EVENT HANDLER
       (define/override (on-event mouse-evt)
         (super on-event mouse-evt)
         (thread (thunk (mouseover-test-handler (send mouse-evt get-y)))))
-      
+
       (define/private (mouseover-test-handler y-coord)
         (define cursor-expr (find-test-y-range y-coord))
         (cond [(or (not cursor-expr) (passed-test? cursor-expr))
                (set-statusbar-label (get-default-statusbar-message))]
               [(or (failed-test? cursor-expr) (error-test? cursor-expr))
                (set-statusbar-label (get-test-message cursor-expr))]))
-      
-      
+
+
       ;; exact-integer -> (or/c passed-test failed-test error-test #f)
       ;; Gets the test at this line.
       (define/private (find-test-y-range y-coord)
@@ -158,47 +141,47 @@
           (if (zero? (hash-count test-table))
               #f
               (find-y-range lo-y-locns))))
-      
+
       ;; EVENT HANDLERS.
       (define/augment (on-insert start len)
         (begin-edit-sequence))
       (define/augment (after-insert start len)
         (end-edit-sequence)
         (check-range start (+ start len)))
-      
-      
+
+
       (define/augment (on-delete start len)
         (begin-edit-sequence))
       (define/augment (after-delete start len)
         (end-edit-sequence)
         (check-range start (+ start len)))
-      
-      
+
+
       (define/augment (on-load-file loaded? format)
         (begin-edit-sequence))
       (define/augment (after-load-file loaded?)
         (end-edit-sequence)
         (first-highlight-refresh))
-      
-      
+
+
       (define (first-highlight-refresh)
         (sleep NEW-FILE-HIGHLIGHT-DELAY)
         (when (highlight?)
           (check-range 0 (- (last-position) 1))))
-      
+
       (define/private (set-statusbar-label message)
         (define frame (send (get-tab) get-frame))
         (send frame set-rktr-status-message message))
-      
+
       (define/private (check-range start stop)
         (when (thread? running-thread)
           (kill-thread running-thread))
         (set! running-thread (thread (thunk (check-range-helper start stop)))))
-      
+
       (define/private (check-range-helper start stop)
         (when (not (highlight?))
           (send (send (get-tab) get-frame) set-rktr-status-message ""))
-        
+
         (when (highlight?)
           (let/ec k
             ; Ignore events that trigger for the entire file.
@@ -219,19 +202,19 @@
                   (define test-output (open-output-string))
                   (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
                                       (make-module-evaluator (remove-tests eval-in-port))))
-                  
+
                   (when evaluator
 				    (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
                     (define tests (get-tests test-in-port))
-                    
+
                     ;; Clear statusbar.
                     (set! first-error-test-status #f)
                     (set! default-statusbar-message "")
                     (set-statusbar-label default-statusbar-message)
-                    
+
                     ;; Clear test hash table.
                     (set! test-table (make-hash))
-                    
+
                     (for ([test-syn tests])
                       (define test-start (max 0 (- (syntax-position test-syn) 1)))
                       (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
@@ -240,17 +223,16 @@
                         (test-passes? test-syn evaluator linenum test-start test-end))
                       (define y-locns (make-y-locations (line-location linenum)
                                                         (line-location linenum #f)))
-                      
+
                       ;; New hash table entry.
                       (hash-set! test-table y-locns test-rc)
-                      
+
                       ;; Set the first syntax error object.
                       ;; TODO: Optimization point?
                       ;; TODO: Change to when-expression
-                      (if (not (passed-test? test-rc))
-                          (set! first-error-test-status test-rc)
-                          (void))
-                      
+                      (when (not (passed-test? test-rc))
+                          (set! first-error-test-status test-rc))
+
                       ) ;; for
                     (highlight-all-tests)
                     (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
@@ -261,10 +243,10 @@
             ) ;; let
           ) ;; when
         ) ;; define
-      
+
       (define/private (highlight-all-tests)
         (queue-callback highlight-all-tests-helper))
-      
+
       (define (highlight-all-tests-helper)
         (for ([y-locn-key (hash-keys test-table)])
           (define test-rc (hash-ref test-table y-locn-key))
@@ -276,11 +258,11 @@
                  [(passed-test? test-rc) pass-delta]
                  [(failed-test? test-rc) fail-delta])
            test-start test-end)))
-      
+
       (define/private (un-highlight-all-tests)
         (set! test-table (make-hash))
         (change-style normal-delta 0 (last-position)))
-      
+
       (super-new))))
 
 
@@ -393,23 +375,23 @@
   (define defn-evaluator
     (with-handlers [(exn:fail? (lambda (e) (error-test (exn-message e))))]
 	  evaluator))
-  
+
   (define test-exp
     (with-handlers [(exn:fail? (lambda (e)  (error-test (exn-message e))))]
       (syntax->datum test-syn)))
-  
+
   (define (error-test msg)
     (make-test-struct STATE_ERROR linenum start-position end-position msg (void)))
   (define passd-test
     (make-test-struct STATE_PASS linenum start-position end-position (void) (void)))
   (define (faild-test exprval testval)
     (make-test-struct STATE_FAIL linenum start-position end-position exprval testval))
-  
+
   (define (try-eval expr)
     (with-handlers [ ;TODO: Need a good syntax matcher
                     (exn:fail? (lambda (e) (error-test (exn-message e))))]
 	  (defn-evaluator expr)))
-  
+
   (define (test-eq actual expected)
     (local [ ;; Make the evaluator recognize strings.
             (define (process-string raw-str)
@@ -456,7 +438,7 @@
                          passd-test
                          (faild-test (pred-app expr) (void)))))]
               [else (error-test "unrecognized test variant")]))] ;; TODO: Change this to other-error ??
-    
+
     (test-passes?-helper))
   ) ;; define (test-passes?)
 

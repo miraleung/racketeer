@@ -34,6 +34,42 @@
 (define EVAL_LIMIT_SECONDS 0.2)
 (define EVAL_LIMIT_MB 0.1)
 
+;; Colour scheme #4: GitHub diff colours.
+;; COLOUR CONSTANTS
+;; In bytes.
+(define COLOUR_ALPHA 0.8)
+
+;; Pass colour. #DBFFDB
+(define COLOUR_PASS_RGB_R 219)
+(define COLOUR_PASS_RGB_G 255)
+(define COLOUR_PASS_RGB_B 219)
+(define COLOUR_PASS (make-object color% COLOUR_PASS_RGB_R
+                                 COLOUR_PASS_RGB_G
+                                 COLOUR_PASS_RGB_B
+                                 COLOUR_ALPHA))
+
+;; Fail colour: #FFDDDD
+(define COLOUR_FAIL_RGB_R 255)
+(define COLOUR_FAIL_RGB_G 221)
+(define COLOUR_FAIL_RGB_B 221)
+(define COLOUR_FAIL (make-object color% COLOUR_FAIL_RGB_R
+                                 COLOUR_FAIL_RGB_G
+                                 COLOUR_FAIL_RGB_B
+                                 COLOUR_ALPHA))
+
+;; Error colour: FFFFBF
+(define COLOUR_ERROR_RGB_R 255)
+(define COLOUR_ERROR_RGB_G 255)
+(define COLOUR_ERROR_RGB_B 191)
+(define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
+                                 COLOUR_ERROR_RGB_G
+                                 COLOUR_ERROR_RGB_B
+                                 COLOUR_ALPHA))
+
+
+
+
+#|
 ;; Colour scheme #2.
 ;; #3 is the same, but with 'change-weight 'bold in the change styles below.
 ;; COLOUR CONSTANTS
@@ -67,7 +103,7 @@
                                  COLOUR_ERROR_RGB_B
                                  COLOUR_ALPHA))
 
-
+|#
 #| Colour scheme #1.
 ;; COLOUR CONSTANTS
 ;; In bytes.

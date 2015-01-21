@@ -499,11 +499,13 @@
             (define (process-string raw-str)
               (string-append "\"" raw-str "\""))
 			(define (process-value val)
-			  (cond [(string? val) (process-string val)]
-			        [(number? val) (inexact->exact val)]
-                    [else val]))
-            (define actual-val    (try-eval (process-value actual)))
-            (define expected-val  (try-eval (process-value expected)))]
+			  (if (string? val) 
+			      (process-string val) 
+				  val))
+		    (define actual-prime (try-eval (process-value actual)))
+			(define expected-prime (try-eval (process-value expected)))
+            (define actual-val   (if (number? actual-prime) (exact->inexact actual-prime) actual-prime))
+            (define expected-val (if (number? expected-prime) (exact->inexact expected-prime) expected-prime))]
       (cond [(and (test-struct? actual-val)
                   (error-test? actual-val)) actual-val]
             [(and (test-struct? expected-val)

@@ -31,6 +31,9 @@
 (define first-error-test-status #f)
 (define default-statusbar-message "")
 
+(define EVAL_LIMIT_SECONDS 0.2)
+(define EVAL_LIMIT_MB 0.1)
+
 ;; STRUCTS
 ;; Test/error struct
 ;; state is one of STATE_PASS, STATE_FAIL, STATE_ERROR
@@ -216,8 +219,9 @@
                   (define test-output (open-output-string))
                   (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
                                       (make-module-evaluator (remove-tests eval-in-port))))
-                  ; The value of evaluator is #f if the source code has syntax errors.
+                  
                   (when evaluator
+				    (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
                     (define tests (get-tests test-in-port))
                     
                     ;; Clear statusbar.
@@ -331,7 +335,7 @@
 (define test-statements (list 'test 'test/exn 'test/pred 'check-error 'check-expect))
 
 (define (get-tests src-port)
-  (syntax-expander (get-syntax-list src-port)))
+  (reverse (syntax-expander (get-syntax-list src-port))))
 
 (define (get-syntax-list src-port)
   (local [(define (get-syntax-list-helper src-port syntax-list)
@@ -388,7 +392,7 @@
 (define (test-passes? test-syn evaluator linenum start-position end-position)
   (define defn-evaluator
     (with-handlers [(exn:fail? (lambda (e) (error-test (exn-message e))))]
-      evaluator))
+	  evaluator))
   
   (define test-exp
     (with-handlers [(exn:fail? (lambda (e)  (error-test (exn-message e))))]
@@ -404,7 +408,7 @@
   (define (try-eval expr)
     (with-handlers [ ;TODO: Need a good syntax matcher
                     (exn:fail? (lambda (e) (error-test (exn-message e))))]
-      (with-limits 0.2 0.1 (defn-evaluator expr))))
+	  (defn-evaluator expr)))
   
   (define (test-eq actual expected)
     (local [ ;; Make the evaluator recognize strings.

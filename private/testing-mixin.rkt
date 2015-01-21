@@ -462,16 +462,12 @@
     (local [ ;; Make the evaluator recognize strings.
             (define (process-string raw-str)
               (string-append "\"" raw-str "\""))
-            (define actual-prime
-              (if (string? actual)
-                  (process-string actual)
-                  actual))
-            (define expected-prime
-              (if (string? expected)
-                  (process-string expected)
-                  expected))
-            (define actual-val    (try-eval actual-prime))
-            (define expected-val  (try-eval expected-prime))]
+			(define (process-value val)
+			  (cond [(string? val) (process-string val)]
+			        [(number? val) (inexact->exact val)]
+                    [else val]))
+            (define actual-val    (try-eval (process-value actual)))
+            (define expected-val  (try-eval (process-value expected)))]
       (cond [(and (test-struct? actual-val)
                   (error-test? actual-val)) actual-val]
             [(and (test-struct? expected-val)

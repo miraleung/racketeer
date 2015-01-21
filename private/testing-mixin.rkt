@@ -195,7 +195,7 @@
         (let/ec k
           ; Ignore events that trigger for the entire file.
           (when (not (and (= 0 start) (= (last-position) stop)))
-            (with-handlers [(exn:fail? (lambda (e) #f))]
+            (with-handlers [(exn:fail? (lambda (e) (send (send (get-tab) get-frame) set-rktr-status-message (string-append "Exception in check-range: " (exn-message e)))))]
 			  (define src-out-port (open-output-bytes))
               (save-port src-out-port)
               (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))

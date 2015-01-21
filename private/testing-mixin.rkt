@@ -34,6 +34,73 @@
 (define EVAL_LIMIT_SECONDS 0.2)
 (define EVAL_LIMIT_MB 0.1)
 
+;; Colour scheme #2.
+;; #3 is the same, but with 'change-weight 'bold in the change styles below.
+;; COLOUR CONSTANTS
+;; In bytes.
+(define COLOUR_ALPHA 0.2)
+
+;; Pass colour. #B2F0B2
+(define COLOUR_PASS_RGB_R 178)
+(define COLOUR_PASS_RGB_G 240)
+(define COLOUR_PASS_RGB_B 178)
+(define COLOUR_PASS (make-object color% COLOUR_PASS_RGB_R
+                                 COLOUR_PASS_RGB_G
+                                 COLOUR_PASS_RGB_B
+                                 COLOUR_ALPHA))
+
+;; Fail colour: #FFB2B2
+(define COLOUR_FAIL_RGB_R 255)
+(define COLOUR_FAIL_RGB_G 178)
+(define COLOUR_FAIL_RGB_B 178)
+(define COLOUR_FAIL (make-object color% COLOUR_FAIL_RGB_R
+                                 COLOUR_FAIL_RGB_G
+                                 COLOUR_FAIL_RGB_B
+                                 COLOUR_ALPHA))
+
+;; Error colour: FFE680
+(define COLOUR_ERROR_RGB_R 255)
+(define COLOUR_ERROR_RGB_G 230)
+(define COLOUR_ERROR_RGB_B 128)
+(define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
+                                 COLOUR_ERROR_RGB_G
+                                 COLOUR_ERROR_RGB_B
+                                 COLOUR_ALPHA))
+
+
+#| Colour scheme #1.
+;; COLOUR CONSTANTS
+;; In bytes.
+(define COLOUR_ALPHA 0.2)
+
+;; Pass colour. #80CC80
+(define COLOUR_PASS_RGB_R 128)
+(define COLOUR_PASS_RGB_G 204)
+(define COLOUR_PASS_RGB_B 128)
+(define COLOUR_PASS (make-object color% COLOUR_PASS_RGB_R
+                                 COLOUR_PASS_RGB_G
+                                 COLOUR_PASS_RGB_B
+                                 COLOUR_ALPHA))
+
+;; Fail colour: #FF9999
+(define COLOUR_FAIL_RGB_R 255)
+(define COLOUR_FAIL_RGB_G 153)
+(define COLOUR_FAIL_RGB_B 153)
+(define COLOUR_FAIL (make-object color% COLOUR_FAIL_RGB_R
+                                 COLOUR_FAIL_RGB_G
+                                 COLOUR_FAIL_RGB_B
+                                 COLOUR_ALPHA))
+
+;; Error colour: FFDB4D
+(define COLOUR_ERROR_RGB_R 255)
+(define COLOUR_ERROR_RGB_G 219)
+(define COLOUR_ERROR_RGB_B 77)
+(define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
+                                 COLOUR_ERROR_RGB_G
+                                 COLOUR_ERROR_RGB_B
+                                 COLOUR_ALPHA))
+|#
+
 ;; STRUCTS
 ;; Test/error struct
 ;; state is one of STATE_PASS, STATE_FAIL, STATE_ERROR
@@ -54,10 +121,10 @@
 (define (error-test? ts)  (symbol=? STATE_ERROR (test-struct-state ts)))
 
 ;; STYLE DEFS
-(define pass-delta (send (make-object style-delta% 'change-weight 'bold)  set-delta-background "green"))
-(define fail-delta (send (make-object style-delta% 'change-weight 'bold)  set-delta-background "red"))
-(define error-delta (send (make-object style-delta% 'change-weight 'bold) set-delta-background "yellow"))
-(define normal-delta (send (make-object style-delta% 'change-weight 'normal) set-delta-background "white"))
+(define pass-delta (send (make-object style-delta% 'change-nothing)  set-delta-background COLOUR_PASS))
+(define fail-delta (send (make-object style-delta% 'change-nothing)  set-delta-background COLOUR_FAIL))
+(define error-delta (send (make-object style-delta% 'change-nothing) set-delta-background COLOUR_ERROR))
+(define normal-delta (send (make-object style-delta% 'change-nothing) set-delta-background "white"))
 
 (define test-table (make-hash))
 
@@ -77,7 +144,6 @@
 (define racketeer<%>
   (interface ()))
 
-(define watching-mouse-events #f)
 
 
 (define racketeer-testing-mixin
@@ -204,7 +270,7 @@
                                       (make-module-evaluator (remove-tests eval-in-port))))
 
                   (when evaluator
-				    (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
+                    (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
                     (define tests (get-tests test-in-port))
 
                     ;; Clear statusbar.

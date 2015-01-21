@@ -34,7 +34,7 @@
 (define EVAL_LIMIT_SECONDS 0.2)
 (define EVAL_LIMIT_MB 0.1)
 
-;; Colour scheme #4: GitHub diff colours.
+;; Colour scheme: GitHub diffs.
 ;; COLOUR CONSTANTS
 ;; In bytes.
 (define COLOUR_ALPHA 0.8)
@@ -66,76 +66,6 @@
                                  COLOUR_ERROR_RGB_B
                                  COLOUR_ALPHA))
 
-
-
-
-#|
-;; Colour scheme #2.
-;; #3 is the same, but with 'change-weight 'bold in the change styles below.
-;; COLOUR CONSTANTS
-;; In bytes.
-(define COLOUR_ALPHA 0.2)
-
-;; Pass colour. #B2F0B2
-(define COLOUR_PASS_RGB_R 178)
-(define COLOUR_PASS_RGB_G 240)
-(define COLOUR_PASS_RGB_B 178)
-(define COLOUR_PASS (make-object color% COLOUR_PASS_RGB_R
-                                 COLOUR_PASS_RGB_G
-                                 COLOUR_PASS_RGB_B
-                                 COLOUR_ALPHA))
-
-;; Fail colour: #FFB2B2
-(define COLOUR_FAIL_RGB_R 255)
-(define COLOUR_FAIL_RGB_G 178)
-(define COLOUR_FAIL_RGB_B 178)
-(define COLOUR_FAIL (make-object color% COLOUR_FAIL_RGB_R
-                                 COLOUR_FAIL_RGB_G
-                                 COLOUR_FAIL_RGB_B
-                                 COLOUR_ALPHA))
-
-;; Error colour: FFE680
-(define COLOUR_ERROR_RGB_R 255)
-(define COLOUR_ERROR_RGB_G 230)
-(define COLOUR_ERROR_RGB_B 128)
-(define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
-                                 COLOUR_ERROR_RGB_G
-                                 COLOUR_ERROR_RGB_B
-                                 COLOUR_ALPHA))
-
-|#
-#| Colour scheme #1.
-;; COLOUR CONSTANTS
-;; In bytes.
-(define COLOUR_ALPHA 0.2)
-
-;; Pass colour. #80CC80
-(define COLOUR_PASS_RGB_R 128)
-(define COLOUR_PASS_RGB_G 204)
-(define COLOUR_PASS_RGB_B 128)
-(define COLOUR_PASS (make-object color% COLOUR_PASS_RGB_R
-                                 COLOUR_PASS_RGB_G
-                                 COLOUR_PASS_RGB_B
-                                 COLOUR_ALPHA))
-
-;; Fail colour: #FF9999
-(define COLOUR_FAIL_RGB_R 255)
-(define COLOUR_FAIL_RGB_G 153)
-(define COLOUR_FAIL_RGB_B 153)
-(define COLOUR_FAIL (make-object color% COLOUR_FAIL_RGB_R
-                                 COLOUR_FAIL_RGB_G
-                                 COLOUR_FAIL_RGB_B
-                                 COLOUR_ALPHA))
-
-;; Error colour: FFDB4D
-(define COLOUR_ERROR_RGB_R 255)
-(define COLOUR_ERROR_RGB_G 219)
-(define COLOUR_ERROR_RGB_B 77)
-(define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
-                                 COLOUR_ERROR_RGB_G
-                                 COLOUR_ERROR_RGB_B
-                                 COLOUR_ALPHA))
-|#
 
 ;; STRUCTS
 ;; Test/error struct
@@ -212,7 +142,8 @@
         (set! highlight-tests? (not highlight-tests?))
         (if (highlight?)
             (check-range 0 (- (last-position) 1))
-            (thread (thunk (un-highlight-all-tests)))))
+            ;; Put on main thread.
+            (un-highlight-all-tests)))
 
 
       ;; MOUSE EVENT HANDLER
@@ -283,7 +214,6 @@
       (define/private (check-range-helper start stop)
         (when (not (highlight?))
           (send (send (get-tab) get-frame) set-rktr-status-message ""))
-
         (when (highlight?)
           (let/ec k
             ; Ignore events that trigger for the entire file.
@@ -332,7 +262,7 @@
                       ;; Set the first syntax error object.
                       ;; TODO: Optimization point?
                       ;; TODO: Change to when-expression
-                      (when (not (passed-test? test-rc))
+                      (when (and (not first-error-test-status) (not (passed-test? test-rc)))
                           (set! first-error-test-status test-rc))
 
                       ) ;; for
@@ -347,19 +277,25 @@
         ) ;; define
 
       (define/private (highlight-all-tests)
-        (queue-callback highlight-all-tests-helper))
+        (queue-callback highlight-all-tests-helper #t))
 
       (define (highlight-all-tests-helper)
+        ;; Get the editor canvas.
+        ;(define editor-canvas
+         ; (send (send (send (get-tab) get-frame) get-editor) get-canvas))
         (for ([y-locn-key (hash-keys test-table)])
           (define test-rc (hash-ref test-table y-locn-key))
           (define test-start (test-struct-start-posn test-rc))
           (define test-end (test-struct-end-posn test-rc))
           (define linenum (test-struct-linenum test-rc))
+          ;(send editor-canvas enable #f)
           (change-style
            (cond [(error-test? test-rc)  error-delta]
                  [(passed-test? test-rc) pass-delta]
                  [(failed-test? test-rc) fail-delta])
-           test-start test-end)))
+           test-start test-end)
+          ;(send editor-canvas enable #t)
+          ))
 
       (define/private (un-highlight-all-tests)
         (set! test-table (make-hash))
@@ -499,8 +435,8 @@
             (define (process-string raw-str)
               (string-append "\"" raw-str "\""))
 			(define (process-value val)
-			  (if (string? val) 
-			      (process-string val) 
+			  (if (string? val)
+			      (process-string val)
 				  val))
 		    (define actual-prime (try-eval (process-value actual)))
 			(define expected-prime (try-eval (process-value expected)))

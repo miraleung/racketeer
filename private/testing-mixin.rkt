@@ -513,7 +513,7 @@
             ;; Needs to be equal? instead of eq? for object comparison.
             [else (if (equal? actual-val expected-val)
                       passd-test
-                      (faild-test actual-val expected-val))])))
+                      (faild-test actual-prime expected-prime))])))
   (local [(define (test-passes?-helper)
             (match test-exp
               [(list (or 'check-expect 'test) actual expected)

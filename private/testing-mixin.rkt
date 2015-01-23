@@ -181,22 +181,22 @@
       (define/augment (on-insert start len)
         (begin-edit-sequence))
       (define/augment (after-insert start len)
-        (end-edit-sequence)
-        (check-range start (+ start len)))
+        (check-range start (+ start len))
+		(end-edit-sequence))
 
 
       (define/augment (on-delete start len)
         (begin-edit-sequence))
       (define/augment (after-delete start len)
-        (end-edit-sequence)
-        (check-range start (+ start len)))
+        (check-range start (+ start len))
+        (end-edit-sequence))
 
 
       (define/augment (on-load-file loaded? format)
         (begin-edit-sequence))
       (define/augment (after-load-file loaded?)
-        (end-edit-sequence)
-        (first-highlight-refresh))
+        (first-highlight-refresh)
+        (end-edit-sequence))
 
 
       (define (first-highlight-refresh)

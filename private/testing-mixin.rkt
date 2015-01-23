@@ -119,6 +119,7 @@
 
       (inherit begin-edit-sequence
                change-style
+               dc-location-to-editor-location
                end-edit-sequence
                find-newline
                get-tab
@@ -141,7 +142,7 @@
         (preferences:set 'drracket:racketeer-highlight-tests? (not highlight-tests?))
         (set! highlight-tests? (not highlight-tests?))
         (if (highlight?)
-            (check-range 0 (- (last-position) 1))
+            (thread (thunk (check-range 0 (- (last-position) 1))))
             ;; Put on main thread.
             (un-highlight-all-tests)))
 
@@ -164,10 +165,11 @@
       (define/private (find-test-y-range y-coord)
         (local [(define lo-y-locns (hash-keys test-table))
                 ;; (listof y-locations) -> (or/c passed-test failed-test error-test #f)
+                (define-values (ignore1 yc) (dc-location-to-editor-location 0 y-coord))
                 (define (find-y-range y-locns)
                   (cond [(empty? y-locns) #f]
                         [(<= (y-locations-top (first y-locns))
-                             y-coord
+                             yc
                              (y-locations-bottom (first y-locns)))
                          (hash-ref test-table (first y-locns))]
                         [else (find-y-range (rest y-locns))]))]
@@ -253,8 +255,10 @@
                       (define linenum (position-line test-start))
                       (define test-rc
                         (test-passes? test-syn evaluator linenum test-start test-end))
-                      (define y-locns (make-y-locations (line-location linenum)
-                                                        (line-location linenum #f)))
+                      (define-values (ignore1 y-top) (values 0 (line-location linenum)))
+                      (define-values (ignore2 y-bottom) (values 0 (line-location linenum #f)))
+
+                      (define y-locns (make-y-locations y-top y-bottom))
 
                       ;; New hash table entry.
                       (hash-set! test-table y-locns test-rc)

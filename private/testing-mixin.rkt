@@ -134,8 +134,7 @@
                position-line
                position-location
                save-port
-               set-styles-sticky
-               set-undo-preserves-all-history)
+               set-styles-sticky)
 
       (define highlight-tests? (preferences:get 'drracket:racketeer-highlight-tests?))
 
@@ -200,7 +199,6 @@
         (end-edit-sequence))
 
       (define/augment (after-load-file loaded?)
-        (send (send (send (get-tab) get-frame) get-editor) set-undo-preserves-all-history #f)
         (first-highlight-refresh))
 
       (define/private (first-highlight-refresh)

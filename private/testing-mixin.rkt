@@ -81,6 +81,7 @@
 (define-struct y-locations (top bottom))
 
 (define running-thread #f)
+(define checking-range #f)
 
 (define (passed-test? ts) (symbol=? STATE_PASS (test-struct-state ts)))
 (define (failed-test? ts) (symbol=? STATE_FAIL (test-struct-state ts)))
@@ -133,7 +134,8 @@
                position-line
                position-location
                save-port
-               set-styles-sticky)
+               set-styles-sticky
+               set-undo-preserves-all-history)
 
       (define highlight-tests? (preferences:get 'drracket:racketeer-highlight-tests?))
 
@@ -142,9 +144,15 @@
         (preferences:set 'drracket:racketeer-highlight-tests? (not highlight-tests?))
         (set! highlight-tests? (not highlight-tests?))
         (if (highlight?)
-            (thread (thunk (check-range 0 (- (last-position) 1))))
+            (check-range 0 (- (last-position) 1))
             ;; Put on main thread.
             (un-highlight-all-tests)))
+
+      ;; PAINT HANDLER
+      (define/override (on-paint before? dc left top right bottom dx dy draw-caret)
+        (super on-paint before? dc left top right bottom dx dy draw-caret)
+        (when (and (highlight?) (not checking-range))
+          (highlight-all-tests)))
 
 
       ;; MOUSE EVENT HANDLER
@@ -178,12 +186,12 @@
               (find-y-range lo-y-locns))))
 
       ;; EVENT HANDLERS.
+
       (define/augment (on-insert start len)
         (begin-edit-sequence))
       (define/augment (after-insert start len)
         (check-range start (+ start len))
-		(end-edit-sequence))
-
+        (end-edit-sequence))
 
       (define/augment (on-delete start len)
         (begin-edit-sequence))
@@ -191,24 +199,21 @@
         (check-range start (+ start len))
         (end-edit-sequence))
 
-
-      (define/augment (on-load-file loaded? format)
-        (begin-edit-sequence))
       (define/augment (after-load-file loaded?)
-        (first-highlight-refresh)
-        (end-edit-sequence))
+        (send (send (send (get-tab) get-frame) get-editor) set-undo-preserves-all-history #f)
+        (first-highlight-refresh))
 
-
-      (define (first-highlight-refresh)
-        (sleep NEW-FILE-HIGHLIGHT-DELAY)
+      (define/private (first-highlight-refresh)
         (when (highlight?)
           (check-range 0 (- (last-position) 1))))
+
 
       (define/private (set-statusbar-label message)
         (define frame (send (get-tab) get-frame))
         (send frame set-rktr-status-message message))
 
       (define/private (check-range start stop)
+;                      (check-range-helper start stop))
         (when (thread? running-thread)
           (kill-thread running-thread))
         (set! running-thread (thread (thunk (check-range-helper start stop)))))
@@ -217,6 +222,7 @@
         (when (not (highlight?))
           (send (send (get-tab) get-frame) set-rktr-status-message ""))
         (when (highlight?)
+          (set! checking-range #t)
           (let/ec k
             ; Ignore events that trigger for the entire file.
             (when (not (and (= 0 start) (= (last-position) stop)))
@@ -270,13 +276,14 @@
                           (set! first-error-test-status test-rc))
 
                       ) ;; for
-                    (highlight-all-tests)
+                    ;(highlight-all-tests)
                     (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
                     ) ;; when
                   ) ;; when
                 ) ;; with-handlers
               ) ;; when
             ) ;; let
+          (set! checking-range #f)
           ) ;; when
         ) ;; define
 
@@ -287,6 +294,7 @@
         ;; Get the editor canvas.
         ;(define editor-canvas
          ; (send (send (send (get-tab) get-frame) get-editor) get-canvas))
+        ; (define the-editor (send (send (get-tab) get-frame) get-editor))
         (for ([y-locn-key (hash-keys test-table)])
           (define test-rc (hash-ref test-table y-locn-key))
           (define test-start (test-struct-start-posn test-rc))
@@ -299,7 +307,8 @@
                  [(failed-test? test-rc) fail-delta])
            test-start test-end)
           ;(send editor-canvas enable #t)
-          ))
+          ) ;; for
+        )
 
       (define/private (un-highlight-all-tests)
         (set! test-table (make-hash))

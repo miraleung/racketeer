@@ -148,6 +148,7 @@
             (un-highlight-all-tests)))
 
       ;; PAINT HANDLER
+      #;
       (define/override (on-paint before? dc left top right bottom dx dy draw-caret)
         (super on-paint before? dc left top right bottom dx dy draw-caret)
         (when (and (highlight?) (not checking-range))

@@ -161,10 +161,9 @@
 
       (define/private (mouseover-test-handler y-coord)
         (define cursor-expr (find-test-y-range y-coord))
-        (cond [(or (not cursor-expr) (passed-test? cursor-expr))
-               (set-statusbar-label (get-default-statusbar-message))]
-              [(or (failed-test? cursor-expr) (error-test? cursor-expr))
-               (set-statusbar-label (get-test-message cursor-expr))]))
+        (if (not cursor-expr)
+          (set-statusbar-label (get-default-statusbar-message))
+          (set-statusbar-label (get-test-message cursor-expr))))
 
 
       ;; exact-integer -> (or/c passed-test failed-test error-test #f)
@@ -274,7 +273,7 @@
                           (set! first-error-test-status test-rc))
 
                       ) ;; for
-                    ;(highlight-all-tests)
+                    (highlight-all-tests)
                     (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
                     ) ;; when
                   ) ;; when
@@ -293,20 +292,17 @@
         ;(define editor-canvas
          ; (send (send (send (get-tab) get-frame) get-editor) get-canvas))
         ; (define the-editor (send (send (get-tab) get-frame) get-editor))
-        (for ([y-locn-key (hash-keys test-table)])
-          (define test-rc (hash-ref test-table y-locn-key))
+        (define (hilite key-ignore test-rc)
           (define test-start (test-struct-start-posn test-rc))
           (define test-end (test-struct-end-posn test-rc))
-          (define linenum (test-struct-linenum test-rc))
-          ;(send editor-canvas enable #f)
-          (change-style
-           (cond [(error-test? test-rc)  error-delta]
-                 [(passed-test? test-rc) pass-delta]
-                 [(failed-test? test-rc) fail-delta])
-           test-start test-end)
-          ;(send editor-canvas enable #t)
-          ) ;; for
-        )
+          (when (test-struct? test-rc)
+            (change-style
+              (cond [(error-test? test-rc)  error-delta]
+                    [(passed-test? test-rc) pass-delta]
+                    [(failed-test? test-rc) fail-delta])
+              test-start test-end)))
+        (hash-for-each test-table hilite)
+        ) ;; define
 
       (define/private (un-highlight-all-tests)
         (set! test-table (make-hash))
@@ -327,21 +323,18 @@
 
 ;; Get the line number of the test struct.
 (define (linenum-prefix ts)
-  (local [(define (format-linenum-string linenum)
-            (string-append "line " (number->string (+ 1 linenum)) ": "))]
-    (cond [(or (not ts)
-               (passed-test? ts)) ""]
-          [(failed-test? ts)
-           (format-linenum-string (test-struct-linenum ts))]
-          [(error-test? ts)
-           (format-linenum-string (test-struct-linenum ts))])))
+  (if (not ts)
+    ""
+    (string-append "line " (number->string (+ 1 (test-struct-linenum ts))) ": ")))
 
+
+;; test-struct -> string
 ;; Format test messages for failed/error tests.
 ;; Use of stringify is due to unknown types of test subexpressions.
 (define (get-test-message ts)
   (cond [(zero? (hash-count test-table)) ""]
         [(not ts) SBAR_ALL_PASS]
-        [(passed-test? ts) default-statusbar-message]
+        [(passed-test? ts) (string-append (linenum-prefix ts) "test passes")]
         [(failed-test? ts)
          (local [(define prefix (linenum-prefix ts))
                  (define value1 (test-struct-error-or-value1 ts))

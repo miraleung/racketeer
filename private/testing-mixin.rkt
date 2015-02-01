@@ -123,6 +123,7 @@
                dc-location-to-editor-location
                end-edit-sequence
                find-newline
+               get-filename
                get-tab
                get-text
                insert
@@ -147,12 +148,18 @@
             ;; Put on main thread.
             (un-highlight-all-tests)))
 
+
       ;; PAINT HANDLER
+      #;
       (define/override (on-paint before? dc left top right bottom dx dy draw-caret)
         (super on-paint before? dc left top right bottom dx dy draw-caret)
         (when (and (highlight?) (not checking-range))
           (highlight-all-tests)))
 
+      ;; KEYBOARD EVENT HANDLER
+      (define/override (on-focus on?)
+                       (super on-focus on?)
+                       (check-range 0 (- (last-position) 1)))
 
       ;; MOUSE EVENT HANDLER
       (define/override (on-event mouse-evt)
@@ -183,8 +190,7 @@
               #f
               (find-y-range lo-y-locns))))
 
-      ;; EVENT HANDLERS.
-
+      ;; EDITOR EVENT HANDLERS.
       (define/augment (on-insert start len)
         (begin-edit-sequence))
       (define/augment (after-insert start len)
@@ -198,6 +204,7 @@
         (end-edit-sequence))
 
       (define/augment (after-load-file loaded?)
+        (change-style normal-delta 0 (last-position))
         (first-highlight-refresh))
 
       (define/private (first-highlight-refresh)
@@ -232,13 +239,13 @@
                 ; TODO: Handle WXME files.
                 (when (and (not (is-wxme-stream? test-in-port))
                            (not (is-wxme-stream? eval-in-port)))
-                  ; If anything is written to the error port while creating the evaluator,
+                  ; If anything is written to the error port while creating the ievaluator,
                   ; write it to a string port
                   ; TODO: Write the contents of the string port to the status bar.
                   (define test-error-output (open-output-string))
                   (define test-output (open-output-string))
                   (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
-                                      (make-module-evaluator (remove-tests eval-in-port))))
+                                      (make-module-evaluator (remove-tests eval-in-port (get-filename)))))
 
                   (when evaluator
                     (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
@@ -268,7 +275,6 @@
 
                       ;; Set the first syntax error object.
                       ;; TODO: Optimization point?
-                      ;; TODO: Change to when-expression
                       (when (and (not first-error-test-status) (not (passed-test? test-rc)))
                           (set! first-error-test-status test-rc))
 
@@ -285,7 +291,11 @@
         ) ;; define
 
       (define/private (highlight-all-tests)
+        (queue-callback clear-highlighting #t)
         (queue-callback highlight-all-tests-helper #t))
+
+      (define (clear-highlighting)
+        (change-style normal-delta 0 (last-position)))
 
       (define (highlight-all-tests-helper)
         ;; Get the editor canvas.
@@ -306,7 +316,7 @@
 
       (define/private (un-highlight-all-tests)
         (set! test-table (make-hash))
-        (change-style normal-delta 0 (last-position)))
+        (queue-callback clear-highlighting #t))
 
       (super-new))))
 
@@ -357,15 +367,20 @@
 
 
 (define test-statements (list 'test 'test/exn 'test/pred 'check-error 'check-expect))
+(define (synreader src-port)
+  (parameterize [(read-accept-reader  #t)
+                 (read-accept-lang    #t)]
+    (if (is-wxme-stream? src-port)
+      (read-syntax 'program (wxme-port->port src-port))
+      (read-syntax 'program src-port))))
+
 
 (define (get-tests src-port)
   (reverse (syntax-expander (get-syntax-list src-port))))
 
 (define (get-syntax-list src-port)
   (local [(define (get-syntax-list-helper src-port syntax-list)
-            (local [(define syn (parameterize [(read-accept-reader  #t)
-                                               (read-accept-lang    #t)]
-                                  (read-syntax 'program src-port)))]
+            (local [(define syn (synreader src-port))]
               (if (syntax? syn)
                   (get-syntax-list-helper src-port (cons syn syntax-list))
                   syntax-list)))]
@@ -374,10 +389,10 @@
 (define (syntax-expander to-expand)
   (local [(define (syntax-expander-helper to-expand syntax-list)
             (if (empty? to-expand)
-                syntax-list
-                (local [(define expanded (syntax->list (first to-expand)))]
-                  (if expanded
-                      (if (test-syntax? (first to-expand))
+              syntax-list
+              (local [(define expanded (syntax->list (first to-expand)))]
+                     (if expanded
+                       (if (test-syntax? (first to-expand))
                           (syntax-expander-helper (rest to-expand) (cons (first to-expand) syntax-list))
                           (syntax-expander-helper (append (filter syntax? expanded) (rest to-expand)) syntax-list))
                       (syntax-expander-helper (rest to-expand) syntax-list)))))]
@@ -391,12 +406,34 @@
        (not (empty? expr))
        (member (first expr) test-statements)))
 
-(define (remove-tests src-port)
-  (test-remover (parameterize [(read-accept-reader  #t)
-                               (read-accept-lang    #t)]
-                  (read-syntax 'program src-port))))
 
-(define (test-remover syn)
+(define (remove-tests src-port filename)
+  (test-remover (synreader src-port) filename))
+
+;; TODO: Support highlighting on new, unsaved file.
+(define (test-remover syn filename)
+
+  ;; Processor for #reader directive (DrRacket metadata).
+  (when (and (path-string? filename)
+             (not (and (symbol? (syntax-e (first (syntax->list syn))))
+                       (symbol=? (syntax-e (first (syntax->list syn))) 'module))))
+    (define filesyn (synreader (open-input-file filename)))
+    (define modname (syntax->datum (second (syntax->list filesyn))))
+    (define library (syntax->datum (third (syntax->list filesyn))))
+    (when (not (symbol? modname))
+      (set! modname 'anonymous-module))
+    (when (or (and (list? library)
+                   (symbol? (first library)) (symbol=? (first library) 'lib))
+                   (symbol? library))
+      (set! syn
+        (datum->syntax #f
+                       (list 'module
+                             modname
+                             library
+                             (list
+                               '#%module-begin
+                               (syntax->datum syn)))))))
+
   (local [(define (keep-expr? expr)
             (not (test-expression? expr)))
           (define (test-remover-helper expr)
@@ -481,5 +518,4 @@
 
     (test-passes?-helper))
   ) ;; define (test-passes?)
-
 

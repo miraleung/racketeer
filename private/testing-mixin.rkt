@@ -57,7 +57,8 @@
                                  COLOUR_FAIL_RGB_B
                                  COLOUR_ALPHA))
 
-;; Error colour: FFFFBF
+;; (Yellow) Error colour: FFFFBF
+#|
 (define COLOUR_ERROR_RGB_R 255)
 (define COLOUR_ERROR_RGB_G 255)
 (define COLOUR_ERROR_RGB_B 191)
@@ -65,6 +66,16 @@
                                  COLOUR_ERROR_RGB_G
                                  COLOUR_ERROR_RGB_B
                                  COLOUR_ALPHA))
+|#
+;; Orange error colour: FCD9B6
+(define COLOUR_ERROR_RGB_R 252)
+(define COLOUR_ERROR_RGB_G 217)
+(define COLOUR_ERROR_RGB_B 182)
+(define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
+                                 COLOUR_ERROR_RGB_G
+                                 COLOUR_ERROR_RGB_B
+                                 COLOUR_ALPHA))
+
 
 
 ;; STRUCTS

@@ -56,9 +56,8 @@
                                  COLOUR_FAIL_RGB_G
                                  COLOUR_FAIL_RGB_B
                                  COLOUR_ALPHA))
-
-;; (Yellow) Error colour: FFFFBF
 #|
+;; (Yellow) Error colour: FFFFBF
 (define COLOUR_ERROR_RGB_R 255)
 (define COLOUR_ERROR_RGB_G 255)
 (define COLOUR_ERROR_RGB_B 191)
@@ -205,14 +204,16 @@
       (define/augment (on-insert start len)
         (begin-edit-sequence))
       (define/augment (after-insert start len)
-        (check-range start (+ start len))
-        (end-edit-sequence))
+        (end-edit-sequence)
+        (check-range start (+ start len)))
+;        (end-edit-sequence))
 
       (define/augment (on-delete start len)
         (begin-edit-sequence))
       (define/augment (after-delete start len)
-        (check-range start (+ start len))
-        (end-edit-sequence))
+        (end-edit-sequence)
+        (check-range start (+ start len)))
+;        (end-edit-sequence))
 
       (define/augment (after-load-file loaded?)
         (change-style normal-delta 0 (last-position))
@@ -306,9 +307,12 @@
         (queue-callback highlight-all-tests-helper #t))
 
       (define (clear-highlighting)
-        (change-style normal-delta 0 (last-position)))
+        (begin-edit-sequence #f #f)
+        (change-style normal-delta 0 (last-position))
+        (end-edit-sequence))
 
       (define (highlight-all-tests-helper)
+        (begin-edit-sequence #f #f)
         ;; Get the editor canvas.
         ;(define editor-canvas
          ; (send (send (send (get-tab) get-frame) get-editor) get-canvas))
@@ -323,6 +327,7 @@
                     [(failed-test? test-rc) fail-delta])
               test-start test-end)))
         (hash-for-each test-table hilite)
+        (end-edit-sequence)
         ) ;; define
 
       (define/private (un-highlight-all-tests)

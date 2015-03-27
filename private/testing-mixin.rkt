@@ -247,8 +247,13 @@
                 (save-port src-out-port)
                 (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
                 (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
+                (define filename (get-filename))
+                (when (not filename) (set! filename "untitled.rkt"))
+                (define wxme-flag (or (is-wxme-stream? test-in-port) (is-wxme-stream? eval-in-port)))
                 ; Ignore events for WXME-formatted files
                 ; TODO: Handle WXME files.
+                (when (is-wxme-stream? test-in-port) (set! test-in-port (wxme-port->port test-in-port)))
+                (when (is-wxme-stream? eval-in-port) (set! eval-in-port (wxme-port->port eval-in-port)))
                 (when (and (not (is-wxme-stream? test-in-port))
                            (not (is-wxme-stream? eval-in-port)))
                   ; If anything is written to the error port while creating the ievaluator,
@@ -257,7 +262,7 @@
                   (define test-error-output (open-output-string))
                   (define test-output (open-output-string))
                   (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
-                                      (make-module-evaluator (remove-tests eval-in-port (get-filename)))))
+                                      (make-module-evaluator (remove-tests eval-in-port filename wxme-flag))))
 
                   (when evaluator
                     (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
@@ -423,17 +428,35 @@
        (member (first expr) test-statements)))
 
 
-(define (remove-tests src-port filename)
-  (test-remover (synreader src-port) filename))
+(define (remove-tests src-port filename wxme-port-flag)
+  (define retval (test-remover (synreader src-port) filename wxme-port-flag))
+;  (display-to-file (format "~a" (fourth retval)) "/media/lux/stuf/A_UBC/CPSC448/tmp/syn.txt")
+;  (message-box "title" (format "~a" retval))
+  retval)
 
 ;; TODO: Support highlighting on new, unsaved file.
-(define (test-remover syn filename)
+(define (test-remover syn filename wxme-port-flag)
+;  (display-to-file (~a (syntax->list syn) #:max-width 1000 #:limit-marker "...") "/media/lux/stuf/A_UBC/CPSC448/tmp/synre2.txt")
+  (when wxme-port-flag
+    (set! syn
+      (datum->syntax #f
+                     (list 'module 'anonymous-module 'lang/racket ; TODO: Get the current language
+                           (list '#%module-begin (syntax->datum syn)))))
 
+  (display-to-file (~a (syntax->list syn) #:max-width 1000 #:limit-marker "...") "/media/lux/stuf/A_UBC/CPSC448/tmp/synreb.txt")
+  (when (path-string? filename)
+    (define filesyn (synreader (open-input-file filename)))
+    (message-box "title" (~a (syntax->list filesyn) #:max-width 1000 #:limit-marker "..."))
+    )
+
+    )
   ;; Processor for #reader directive (DrRacket metadata).
   (when (and (path-string? filename)
              (not (and (symbol? (syntax-e (first (syntax->list syn))))
                        (symbol=? (syntax-e (first (syntax->list syn))) 'module))))
-    (define filesyn (synreader (open-input-file filename)))
+    (define fileport (open-input-file filename))
+    (define filesyn (synreader fileport))
+    (close-input-port fileport)
     (define modname (syntax->datum (second (syntax->list filesyn))))
     (define library (syntax->datum (third (syntax->list filesyn))))
     (when (not (symbol? modname))

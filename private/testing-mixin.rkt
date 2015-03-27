@@ -430,28 +430,22 @@
 
 (define (remove-tests src-port filename wxme-port-flag)
   (define retval (test-remover (synreader src-port) filename wxme-port-flag))
-;  (display-to-file (format "~a" (fourth retval)) "/media/lux/stuf/A_UBC/CPSC448/tmp/syn.txt")
-;  (message-box "title" (format "~a" retval))
+  ;(message-box "title" (format "~a" retval))
   retval)
 
 ;; TODO: Support highlighting on new, unsaved file.
 (define (test-remover syn filename wxme-port-flag)
-;  (display-to-file (~a (syntax->list syn) #:max-width 1000 #:limit-marker "...") "/media/lux/stuf/A_UBC/CPSC448/tmp/synre2.txt")
   (when wxme-port-flag
     (set! syn
       (datum->syntax #f
                      (list 'module 'anonymous-module 'lang/racket ; TODO: Get the current language
                            (list '#%module-begin (syntax->datum syn)))))
-
-  (display-to-file (~a (syntax->list syn) #:max-width 1000 #:limit-marker "...") "/media/lux/stuf/A_UBC/CPSC448/tmp/synreb.txt")
-  (when (path-string? filename)
-    (define filesyn (synreader (open-input-file filename)))
-    (message-box "title" (~a (syntax->list filesyn) #:max-width 1000 #:limit-marker "..."))
-    )
-
     )
   ;; Processor for #reader directive (DrRacket metadata).
+  ;; TODO: Get header metadata/gui language dynamically
+  ;; TODO: Handle WXME off-by-x highlighting errors
   (when (and (path-string? filename)
+             (not wxme-port-flag)
              (not (and (symbol? (syntax-e (first (syntax->list syn))))
                        (symbol=? (syntax-e (first (syntax->list syn))) 'module))))
     (define fileport (open-input-file filename))
@@ -472,7 +466,6 @@
                              (list
                                '#%module-begin
                                (syntax->datum syn)))))))
-
   (local [(define (keep-expr? expr)
             (not (test-expression? expr)))
           (define (test-remover-helper expr)

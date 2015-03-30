@@ -24,8 +24,6 @@
     (define rktr-status-panel         'uninitialized)
     (define rktr-status-message       'uninit)
 
-    ;; TODO: Re-enable on/off highlighting when study is done.
-    #;
     (define/override (file-menu:between-open-and-revert file-menu)
       (super file-menu:between-open-and-revert file-menu)
       (new checkable-menu-item%

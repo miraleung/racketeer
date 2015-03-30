@@ -248,7 +248,7 @@
                 (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
                 (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
                 (define filename (get-filename))
-                (when (not filename) (set! filename "untitled.rkt"))
+;                (when (not filename) (set! filename "untitled.rkt"))
                 (define wxme-flag (or (is-wxme-stream? test-in-port) (is-wxme-stream? eval-in-port)))
                 ; Ignore events for WXME-formatted files
                 ; TODO: Handle WXME files.
@@ -435,10 +435,10 @@
 
 ;; TODO: Support highlighting on new, unsaved file.
 (define (test-remover syn filename wxme-port-flag)
-  (when wxme-port-flag
+  (when (and (path-string? filename) wxme-port-flag)
     (set! syn
       (datum->syntax #f
-                     (list 'module 'anonymous-module 'lang/racket ; TODO: Get the current language
+                     (list 'module 'anonymous-module 'lang/htdp-beginner ; TODO: Get the current language
                            (list '#%module-begin (syntax->datum syn)))))
     )
   ;; Processor for #reader directive (DrRacket metadata).
@@ -465,7 +465,8 @@
                              library
                              (list
                                '#%module-begin
-                               (syntax->datum syn)))))))
+                               (syntax->datum syn))))))
+    )
   (local [(define (keep-expr? expr)
             (not (test-expression? expr)))
           (define (test-remover-helper expr)

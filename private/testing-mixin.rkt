@@ -31,6 +31,7 @@
 (define first-error-test-status #f)
 (define default-statusbar-message "")
 
+(define EVAL_INTERVAL_SECONDS 2)
 (define EVAL_LIMIT_SECONDS 0.2)
 (define EVAL_LIMIT_MB 0.1)
 
@@ -434,16 +435,14 @@
        (member (first expr) test-statements)))
 
 
-(define (remove-tests src-port filename wxme-port-flag)
+(define (remove-tests src-port filename wxme-port-flag) ;; flag may be set to true for new files
   (define retval (test-remover (synreader src-port) filename wxme-port-flag))
-;    (define aval (send (racketeer-testing-mixin) get-next-settings))
-;    (message-box "a" aval)
   ;(message-box "title" (format "~a" retval))
   retval)
 
-;; TODO: Support highlighting on new, unsaved file.
+;; TODO: Get syntax objects past the first line for new, unsaved files.
 (define (test-remover syn filename wxme-port-flag)
-  (when (not filename)
+  (when (and (not filename) (= (modulo (current-seconds) EVAL_INTERVAL_SECONDS) 0))
 ;    (message-box "t" (format "~a" syn))
      (set! syn
        (datum->syntax #f

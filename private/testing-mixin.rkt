@@ -200,6 +200,12 @@
               #f
               (find-y-range lo-y-locns))))
 
+      #;
+      (define/augment (after-set-next-settings lang-settings)
+                      (message-box "a" (format "~a" (vector-ref (struct->vector lang-settings) 1)))
+ ;                     (message-box "a" (format "~a" (drracket:language-configuration:language-settings? lang-settings)))
+                      )
+
       ;; EDITOR EVENT HANDLERS.
       (define/augment (on-insert start len)
         (begin-edit-sequence))
@@ -430,22 +436,27 @@
 
 (define (remove-tests src-port filename wxme-port-flag)
   (define retval (test-remover (synreader src-port) filename wxme-port-flag))
+;    (define aval (send (racketeer-testing-mixin) get-next-settings))
+;    (message-box "a" aval)
   ;(message-box "title" (format "~a" retval))
   retval)
 
 ;; TODO: Support highlighting on new, unsaved file.
 (define (test-remover syn filename wxme-port-flag)
-  (when (and (path-string? filename) wxme-port-flag)
-    (set! syn
-      (datum->syntax #f
-                     (list 'module 'anonymous-module 'lang/htdp-beginner ; TODO: Get the current language
-                           (list '#%module-begin (syntax->datum syn)))))
-    )
+  (when (not filename)
+;    (message-box "t" (format "~a" syn))
+     (set! syn
+       (datum->syntax #f
+                      (list 'module
+                            'anonymous-module
+                            'lang/htdp-beginner ; TODO: Get language dynamically
+                            (list
+                              '#%module-begin
+                              (syntax->datum syn)))))
+     ) ;; when
   ;; Processor for #reader directive (DrRacket metadata).
   ;; TODO: Get header metadata/gui language dynamically
-  ;; TODO: Handle WXME off-by-x highlighting errors
   (when (and (path-string? filename)
-             (not wxme-port-flag)
              (not (and (symbol? (syntax-e (first (syntax->list syn))))
                        (symbol=? (syntax-e (first (syntax->list syn))) 'module))))
     (define fileport (open-input-file filename))

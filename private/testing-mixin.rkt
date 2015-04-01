@@ -201,9 +201,12 @@
               #f
               (find-y-range lo-y-locns))))
 
-      #;
+#;
       (define/augment (after-set-next-settings lang-settings)
-                      (message-box "a" (format "~a" (vector-ref (struct->vector lang-settings) 1)))
+                      (define sett (send (send (get-tab) get-defs) get-next-settings))
+                      (message-box "a" (format "~a" sett))
+
+      ;                (message-box "a" (format "~a" (vector-ref (struct->vector lang-settings) 1)))
  ;                     (message-box "a" (format "~a" (drracket:language-configuration:language-settings? lang-settings)))
                       )
 

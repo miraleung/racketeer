@@ -1,10 +1,20 @@
-An incredibly cutting-edge issue tracker.
+An incredibly cutting-edge issue tracker until we move to a VC system with an actual issue tracker.
 
 Issues
--------
- - white/unevaluated tests if there is some syntax error in a definition
- - can't handle strings
- - noticable lag
- - Loading some saved file doesn't work - highlighting turns off right away
- - Partial highlighting of tests, and overflow of highlights; anything out of test-length range of the cursor doesn't get properly highlighted, if at all
+========
+
+Unresolved
+-----------
+- Handle large files
+- test/pred
+
+Fixed/closed
+--------------
+- get languages from GUI selection
+- handle WXME files
+- white/unevaluated tests if there is some syntax error in a definition
+- can't handle strings
+- noticable lag
+- Loading some saved file doesn't work - highlighting turns off right away
+- Partial highlighting of tests, and overflow of highlights; anything out of test-length range of the cursor doesn't get properly highlighted, if at all
 

@@ -15,13 +15,6 @@
          wxme)
 
 ;; CONSTANTS
-;; Handler types.
-(define HANDLER_AFTER_INSERT    "after-insert")
-(define HANDLER_AFTER_DELETE    "after-delete")
-(define HANDLER_AFTER_LOAD_FILE "after-load-file")
-
-(define SBAR_ALL_PASS "All tests pass.")
-
 (define STATE_PASS 'pass)
 (define STATE_FAIL 'fail)
 (define STATE_ERROR 'error)
@@ -29,11 +22,21 @@
 ;; Test expression constants.
 ;; (or/c syntax? #f)
 (define first-error-test-status #f)
+
+;; Statusbar.
+(define SBAR_ALL_PASS "All tests pass.")
 (define default-statusbar-message "")
 
+
+;; Evaluation limits.
 (define EVAL_INTERVAL_SECONDS 2)
 (define EVAL_LIMIT_SECONDS 0.2)
 (define EVAL_LIMIT_MB 0.1)
+
+;; Language settings (from GUI).
+(define UNINITIALIZED 'uninitialized)
+(define CURRENT-LIBRARY UNINITIALIZED)
+
 
 ;; Colour scheme: GitHub diffs.
 ;; COLOUR CONSTANTS
@@ -57,29 +60,14 @@
                                  COLOUR_FAIL_RGB_G
                                  COLOUR_FAIL_RGB_B
                                  COLOUR_ALPHA))
-#|
-;; (Yellow) Error colour: FFFFBF
-(define COLOUR_ERROR_RGB_R 255)
-(define COLOUR_ERROR_RGB_G 255)
-(define COLOUR_ERROR_RGB_B 191)
-(define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
-                                 COLOUR_ERROR_RGB_G
-                                 COLOUR_ERROR_RGB_B
-                                 COLOUR_ALPHA))
-|#
 ;; Orange error colour: FCD9B6
 (define COLOUR_ERROR_RGB_R 252)
-;(define COLOUR_ERROR_RGB_G 225)
 (define COLOUR_ERROR_RGB_G 217)
 (define COLOUR_ERROR_RGB_B 182)
 (define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
                                  COLOUR_ERROR_RGB_G
                                  COLOUR_ERROR_RGB_B
                                  COLOUR_ALPHA))
-
-(define UNINITIALIZED 'uninitialized)
-(define CURRENT-LIBRARY UNINITIALIZED)
-
 
 ;; STRUCTS
 ;; Test/error struct
@@ -94,41 +82,43 @@
 ;; y-locations: the y-coordinate range of a line.
 (define-struct y-locations (top bottom))
 
+; Thread flags.
 (define running-thread #f)
 (define checking-range #f)
 
+; Test status indicators.
 (define (passed-test? ts) (symbol=? STATE_PASS (test-struct-state ts)))
 (define (failed-test? ts) (symbol=? STATE_FAIL (test-struct-state ts)))
 (define (error-test? ts)  (symbol=? STATE_ERROR (test-struct-state ts)))
 
-;; STYLE DEFS
-(define pass-delta (send (make-object style-delta% 'change-nothing)  set-delta-background COLOUR_PASS))
-(define fail-delta (send (make-object style-delta% 'change-nothing)  set-delta-background COLOUR_FAIL))
-(define error-delta (send (make-object style-delta% 'change-nothing) set-delta-background COLOUR_ERROR))
-(define normal-delta (send (make-object style-delta% 'change-nothing) set-delta-background "white"))
+;; Text highlighting.
+(define pass-delta
+  (send (make-object style-delta% 'change-nothing)
+        set-delta-background COLOUR_PASS))
 
+(define fail-delta
+  (send (make-object style-delta% 'change-nothing)
+        set-delta-background COLOUR_FAIL))
+
+(define error-delta
+  (send (make-object style-delta% 'change-nothing)
+        set-delta-background COLOUR_ERROR))
+
+(define normal-delta
+  (send (make-object style-delta% 'change-nothing)
+        set-delta-background "white"))
+
+;; Test expressions map.
 (define test-table (make-hash))
 
-
-(define NEW-FILE-HIGHLIGHT-DELAY 2.5) ; seconds
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide racketeer-testing-mixin)
-#;
-(provide/contract
- [racketeer<%> interface?]
- [racketeer-testing-mixin
-  (-> (class/c () ()))
-  (class/c
-   [foo (->m void?)])])
 
 (define racketeer<%>
   (interface ()))
 
-
-
 (define racketeer-testing-mixin
-  ;  (mixin ((class->interface text%) editor<%>) ()
   (lambda (cls)
     (class* cls ()
 
@@ -151,6 +141,7 @@
                save-port
                set-styles-sticky)
 
+      ;; Highlighting handlers.
       (define highlight-tests? (preferences:get 'drracket:racketeer-highlight-tests?))
 
       (define/public-final (highlight?) highlight-tests?)
@@ -162,30 +153,47 @@
             ;; Put on main thread.
             (un-highlight-all-tests)))
 
-
-      ;; PAINT HANDLER
-      #;
-      (define/override (on-paint before? dc left top right bottom dx dy draw-caret)
-        (super on-paint before? dc left top right bottom dx dy draw-caret)
-        (when (and (highlight?) (not checking-range))
-          (highlight-all-tests)))
-
-      ;; KEYBOARD EVENT HANDLER
+      ;; Keyboard event handler.
       (define/override (on-focus on?)
                        (super on-focus on?)
                        (check-range 0 (- (last-position) 1)))
 
-      ;; MOUSE EVENT HANDLER
+      ;; Mouse event handler.
       (define/override (on-event mouse-evt)
         (super on-event mouse-evt)
         (thread (thunk (mouseover-test-handler (send mouse-evt get-y)))))
+
+      ;; Gui language selector event handler.
+      (define/augment (after-set-next-settings lang-settings)
+        (get-gui-language))
+
+      ;; Editor event handlers.
+      (define/augment (on-insert start len)
+        (begin-edit-sequence))
+      (define/augment (after-insert start len)
+        (end-edit-sequence)
+        (check-range start (+ start len)))
+
+      (define/augment (on-delete start len)
+        (begin-edit-sequence))
+      (define/augment (after-delete start len)
+        (end-edit-sequence)
+        (check-range start (+ start len)))
+
+      (define/augment (after-load-file loaded?)
+        (get-gui-language)
+        (change-style normal-delta 0 (last-position))
+        (first-highlight-refresh))
+
+      ;; ========================================================
+      ;; Class-private helpers.
+      ;; ========================================================
 
       (define/private (mouseover-test-handler y-coord)
         (define cursor-expr (find-test-y-range y-coord))
         (if (not cursor-expr)
           (set-statusbar-label (get-default-statusbar-message))
           (set-statusbar-label (get-test-message cursor-expr))))
-
 
       ;; exact-integer -> (or/c passed-test failed-test error-test #f)
       ;; Gets the test at this line.
@@ -217,39 +225,17 @@
           ) ;; when
         ) ;; define
 
-      ;; GUI LANGUAGE SELECTOR EVENT HANDLER
-      (define/augment (after-set-next-settings lang-settings)
-        (get-gui-language))
-
-      ;; EDITOR EVENT HANDLERS.
-      (define/augment (on-insert start len)
-        (begin-edit-sequence))
-      (define/augment (after-insert start len)
-        (end-edit-sequence)
-        (check-range start (+ start len)))
-
-      (define/augment (on-delete start len)
-        (begin-edit-sequence))
-      (define/augment (after-delete start len)
-        (end-edit-sequence)
-        (check-range start (+ start len)))
-
-      (define/augment (after-load-file loaded?)
-        (get-gui-language)
-        (change-style normal-delta 0 (last-position))
-        (first-highlight-refresh))
 
       (define/private (first-highlight-refresh)
         (when (highlight?)
           (check-range 0 (- (last-position) 1))))
 
-
       (define/private (set-statusbar-label message)
         (define frame (send (get-tab) get-frame))
         (send frame set-rktr-status-message message))
 
+      ;; Traverse all the expressions and evaluate appropriately.
       (define/private (check-range start stop)
-;                      (check-range-helper start stop))
         (when (thread? running-thread)
           (kill-thread running-thread))
         (set! running-thread (thread (thunk (check-range-helper start stop)))))
@@ -259,6 +245,7 @@
           (send (send (get-tab) get-frame) set-rktr-status-message ""))
         (when (highlight?)
           (set! checking-range #t)
+          ;; Set language if not yet initialized.
           (when (and (symbol? CURRENT-LIBRARY) (symbol=? CURRENT-LIBRARY UNINITIALIZED))
             (get-gui-language))
           (let/ec k
@@ -270,23 +257,23 @@
                 (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
                 (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
                 (define filename (get-filename))
-                (define wxme-flag (or (is-wxme-stream? test-in-port) (is-wxme-stream? eval-in-port)))
+                (define wxme-flag
+                  (or (is-wxme-stream? test-in-port)
+                      (is-wxme-stream? eval-in-port)))
 
                 ;; Handle WXME files.
+                ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
                 (when (is-wxme-stream? test-in-port)
                   (set! test-in-port (wxme-port->port test-in-port)))
-                (when (is-wxme-stream? eval-in-port)
-                  (set! eval-in-port (wxme-port->port eval-in-port)))
 
-                (when (and (not (is-wxme-stream? test-in-port))
-                           (not (is-wxme-stream? eval-in-port)))
                   ; If anything is written to the error port while creating the ievaluator,
                   ; write it to a string port
                   ; TODO: Write the contents of the string port to the status bar.
                   (define test-error-output (open-output-string))
                   (define test-output (open-output-string))
                   (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
-                                      (make-module-evaluator (remove-tests eval-in-port filename wxme-flag))))
+                                      (make-module-evaluator
+                                        (remove-tests eval-in-port filename wxme-flag))))
 
                   (when evaluator
                     (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
@@ -323,7 +310,6 @@
                     (highlight-all-tests)
                     (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
                     ) ;; when
-                  ) ;; when
                 ) ;; with-handlers
               ) ;; when
             ) ;; let
@@ -342,10 +328,6 @@
 
       (define (highlight-all-tests-helper)
         (begin-edit-sequence #f #f)
-        ;; Get the editor canvas.
-        ;(define editor-canvas
-         ; (send (send (send (get-tab) get-frame) get-editor) get-canvas))
-        ; (define the-editor (send (send (get-tab) get-frame) get-editor))
         (define (hilite key-ignore test-rc)
           (define test-start (test-struct-start-posn test-rc))
           (define test-end (test-struct-end-posn test-rc))
@@ -367,7 +349,7 @@
 
 
 
-
+;; Workaround to get test results/values into a string.
 (define (stringify prefix message)
   (string-append
    prefix
@@ -381,7 +363,6 @@
   (if (not ts)
     ""
     (string-append "line " (number->string (+ 1 (test-struct-linenum ts))) ": ")))
-
 
 ;; test-struct -> string
 ;; Format test messages for failed/error tests.
@@ -416,7 +397,8 @@
   (parameterize [(read-accept-reader  #t)
                  (read-accept-lang    #t)]
     (if (is-wxme-stream? src-port)
-      (read-syntax 'program (wxme-port->port src-port))
+      (wxme-read-syntax 'program src-port)
+;      (read-syntax 'program (wxme-port->port src-port))
       (read-syntax 'program src-port))))
 
 
@@ -438,8 +420,13 @@
               (local [(define expanded (syntax->list (first to-expand)))]
                      (if expanded
                        (if (test-syntax? (first to-expand))
-                          (syntax-expander-helper (rest to-expand) (cons (first to-expand) syntax-list))
-                          (syntax-expander-helper (append (filter syntax? expanded) (rest to-expand)) syntax-list))
+                          (syntax-expander-helper
+                            (rest to-expand)
+                            (cons (first to-expand) syntax-list))
+                          (syntax-expander-helper
+                            (append (filter syntax? expanded)
+                                    (rest to-expand))
+                            syntax-list))
                       (syntax-expander-helper (rest to-expand) syntax-list)))))]
     (syntax-expander-helper to-expand empty)))
 
@@ -452,31 +439,34 @@
        (member (first expr) test-statements)))
 
 
-(define (remove-tests src-port filename wxme-port-flag) ;; flag may be set to true for new files
+(define (remove-tests src-port filename wxme-port-flag) ;; flag could be set to true for new files
   (test-remover (synreader src-port) filename wxme-port-flag))
 
-
-;; TODO: Get syntax objects past the first line for new, unsaved files.
+;; Remove test expressions and process syntax object for evaluation.
 (define (test-remover syn filename wxme-port-flag)
   ;; If the current language is not a GUI-selected language, get the lang def (declaration).
   (when (or (boolean? CURRENT-LIBRARY) (symbol? CURRENT-LIBRARY))
     (set! CURRENT-LIBRARY (third (syntax->list syn))))
+  (define inner-syn (list '#%module-begin (syntax->datum syn)))
+
+  (when wxme-port-flag
+    ;; Strip out the first 'begin included by wxme-read-syntax.
+    (set! inner-syn
+      (foldr cons empty (cons '#%module-begin (rest (syntax->datum syn))))))
 
   ;; Restructuring is needed on new files only if a language is specified from the GUI.
+  ;; New non-WXME files are fine as they are.
   (when (and (not filename)
              (list? CURRENT-LIBRARY))
-             ;(= (modulo (current-seconds) EVAL_INTERVAL_SECONDS) 0))
      (set! syn
        (datum->syntax #f
                       (list 'module
                             'anonymous-module
-                            CURRENT-LIBRARY ; TODO: Get language dynamically
-                            (list
-                              '#%module-begin
-                              (syntax->datum syn)))))
-     ) ;; when
+                            CURRENT-LIBRARY
+                            inner-syn)))
+   ) ;; when
 
-  ;; Processor for #reader directive (DrRacket metadata).
+  ;; Process #reader directive for saved files w/ DrRacket metadata header (but not WXME file).
   (when (and (path-string? filename)
              (not (and (symbol? (syntax-e (first (syntax->list syn))))
                        (symbol=? (syntax-e (first (syntax->list syn))) 'module))))
@@ -485,23 +475,24 @@
     (close-input-port fileport)
     (define modname (syntax->datum (second (syntax->list filesyn))))
     (define library (syntax->datum (third (syntax->list filesyn))))
-     ; (message-box "a" (format "this is the lib ~a\n current: ~a" library CURRENT-LIBRARY ))
-   (when (and (not (boolean? CURRENT-LIBRARY)))
+
+    (when (and (not (boolean? CURRENT-LIBRARY)))
       (set! library CURRENT-LIBRARY))
+
     (when (not (symbol? modname))
       (set! modname 'anonymous-module))
+
     (when (or (and (list? library)
                    (symbol? (first library)) (symbol=? (first library) 'lib))
-                   (symbol? library))
+              (symbol? library))
       (set! syn
         (datum->syntax #f
                        (list 'module
                              modname
                              library
-                             (list
-                               '#%module-begin
-                               (syntax->datum syn))))))
-    )
+                             inner-syn)))
+      ) ;; when
+    ) ;; when
   (local [(define (keep-expr? expr)
             (not (test-expression? expr)))
           (define (test-remover-helper expr)
@@ -548,9 +539,16 @@
 			      (process-string val)
 				  val))
 		    (define actual-prime (try-eval (process-value actual)))
-			(define expected-prime (try-eval (process-value expected)))
-            (define actual-val   (if (number? actual-prime) (exact->inexact actual-prime) actual-prime))
-            (define expected-val (if (number? expected-prime) (exact->inexact expected-prime) expected-prime))]
+        (define expected-prime (try-eval (process-value expected)))
+        (define actual-val
+          (if (number? actual-prime)
+            (exact->inexact actual-prime)
+            actual-prime))
+        (define expected-val
+          (if (number? expected-prime)
+            (exact->inexact expected-prime)
+            expected-prime))
+        ]
       (cond [(and (test-struct? actual-val)
                   (error-test? actual-val)) actual-val]
             [(and (test-struct? expected-val)
@@ -559,6 +557,7 @@
             [else (if (equal? actual-val expected-val)
                       passd-test
                       (faild-test actual-prime expected-prime))])))
+
   (local [(define (test-passes?-helper)
             (match test-exp
               [(list (or 'check-expect 'test) actual expected)
@@ -567,11 +566,11 @@
                (if (not (string? str))
                    (error-test "second expression must be a string")
                    (local [(define actual-val (try-eval actual))]
-                     (if (and (test-struct? actual-val) (error-test? actual-val)) ; <- this should be other-error, once syntax-matching is fixed.
+                     (if (and (test-struct? actual-val)
+                              (error-test? actual-val))
                          passd-test
                          (faild-test actual-val "an exception"))))]
               [(list 'check-error actual)
-               ; TODO: If try-eval returns an oom-error, it should be an error struct, not a failed-struct.
                (if (error-test? (try-eval actual))
                    passd-test
                    (faild-test "no error raised" (void)))]
@@ -582,8 +581,7 @@
                      (if (pred-app expr)
                          passd-test
                          (faild-test (pred-app expr) (void)))))]
-              [else (error-test "unrecognized test variant")]))] ;; TODO: Change this to other-error ??
-
+              [else (error-test "unrecognized test variant")]))]
     (test-passes?-helper))
   ) ;; define
 

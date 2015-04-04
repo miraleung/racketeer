@@ -84,6 +84,9 @@
 
 ; Thread flags.
 (define running-thread #f)
+(define clear-highlighting-thread #f)
+(define highlighting-thread #f)
+(define statusbar-thread #f)
 (define checking-range #f)
 
 ; Test status indicators.
@@ -182,7 +185,6 @@
 
       (define/augment (after-load-file loaded?)
         (get-gui-language)
-        (change-style normal-delta 0 (last-position))
         (first-highlight-refresh))
 
       ;; ========================================================
@@ -236,14 +238,38 @@
 
       ;; Traverse all the expressions and evaluate appropriately.
       (define/private (check-range start stop)
-        (when (thread? running-thread)
+        ;; Kill any threads that are still running.
+        (when (thread-is-running? running-thread)
           (kill-thread running-thread))
-        (set! running-thread (thread (thunk (check-range-helper start stop)))))
+        (when (thread-is-running? statusbar-thread)
+          (kill-thread statusbar-thread))
+        (when (thread-is-running? clear-highlighting-thread)
+          (kill-thread clear-highlighting-thread))
+        (when (thread-is-running? highlighting-thread)
+          (kill-thread highlighting-thread))
+
+        ;; Make each new thread wait until the last one has finished.
+        (set! running-thread (thread (thunk (check-range-helper start stop))))
+        (set! statusbar-thread (thread (thunk (set-statusbar-label (get-default-statusbar-message)))))
+        (set! clear-highlighting-thread (thread (thunk (clear-highlighting))))
+        (thread-wait clear-highlighting-thread)
+        (set! highlighting-thread (thread (thunk (highlight-all-tests-helper))))
+        (thread-wait highlighting-thread)
+        ) ;; define
+
+      (define/private (thread-is-running? th)
+                      (and (not (boolean? th)) (thread? th) (thread-running? th)))
 
       (define/private (check-range-helper start stop)
         (when (not (highlight?))
           (send (send (get-tab) get-frame) set-rktr-status-message ""))
-        (when (highlight?)
+        (define eval-interval
+          (if (zero? (last-position))
+            1
+            (order-of-magnitude (last-position))))
+        (when (>= eval-interval 2) ;; >= than 100 lines
+          (set! eval-interval (* 2 eval-interval)))
+        (when (and (highlight?) (= (modulo (current-seconds) eval-interval) 0))
           (set! checking-range #t)
           ;; Set language if not yet initialized.
           (when (and (symbol? CURRENT-LIBRARY) (symbol=? CURRENT-LIBRARY UNINITIALIZED))
@@ -307,8 +333,6 @@
                           (set! first-error-test-status test-rc))
 
                       ) ;; for
-                    (highlight-all-tests)
-                    (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
                     ) ;; when
                 ) ;; with-handlers
               ) ;; when
@@ -317,14 +341,11 @@
           ) ;; when
         ) ;; define
 
-      (define/private (highlight-all-tests)
-        (queue-callback clear-highlighting #t)
-        (queue-callback highlight-all-tests-helper #t))
-
       (define (clear-highlighting)
         (begin-edit-sequence #f #f)
         (change-style normal-delta 0 (last-position))
-        (end-edit-sequence))
+        (end-edit-sequence)
+        )
 
       (define (highlight-all-tests-helper)
         (begin-edit-sequence #f #f)
@@ -341,13 +362,15 @@
         (end-edit-sequence)
         ) ;; define
 
+
       (define/private (un-highlight-all-tests)
         (set! test-table (make-hash))
-        (queue-callback clear-highlighting #t))
+        (when (thread? clear-highlighting-thread)
+          (kill-thread clear-highlighting-thread))
+        (set! clear-highlighting-thread (thread (thunk (clear-highlighting))))
+        ) ;; define
 
       (super-new))))
-
-
 
 ;; Workaround to get test results/values into a string.
 (define (stringify prefix message)

@@ -23,6 +23,8 @@
     (define rktr-status-parent-panel  'uninitialized)
     (define rktr-status-panel         'uninitialized)
     (define rktr-status-message       'uninit)
+    (define rktr-current-library      'lang/htdp-beginner)
+;      (send (drracket:language-configuration:language-settings-language (send (send (get-tab) get-defs) get-next-settings)) get-reader-module))
 
     (define/override (file-menu:between-open-and-revert file-menu)
       (super file-menu:between-open-and-revert file-menu)
@@ -54,6 +56,12 @@
     (define/public (set-rktr-status-message str)
                    (send rktr-status-message set-label str))
 
+    (define/public (get-rktr-current-library)
+                   rktr-current-library)
+    (define/public (see-lang lang-settings)
+                   (set! rktr-current-library  (send (drracket:language-configuration:language-settings-language lang-settings) get-reader-module))
+                   (message-box "a" (format "~a" rktr-current-library)))
+;                    (message-box "a" (format "~a ~a" the-lang)))
     (super-new)))
 
 
@@ -63,3 +71,5 @@
 (preferences:set-default 'drracket:racketeer-highlight-tests? #t boolean?)
 (drracket:get/extend:extend-definitions-text racketeer-testing-mixin)
 (drracket:get/extend:extend-unit-frame racketeer-frame-mixin)
+(define the-lang (drracket:language-configuration:get-settings-preferences-symbol))
+

@@ -69,6 +69,7 @@
 |#
 ;; Orange error colour: FCD9B6
 (define COLOUR_ERROR_RGB_R 252)
+;(define COLOUR_ERROR_RGB_G 225)
 (define COLOUR_ERROR_RGB_G 217)
 (define COLOUR_ERROR_RGB_B 182)
 (define COLOUR_ERROR (make-object color% COLOUR_ERROR_RGB_R
@@ -76,6 +77,7 @@
                                  COLOUR_ERROR_RGB_B
                                  COLOUR_ALPHA))
 
+(define CURRENT-LIBRARY 'lang/htdp-beginner)
 
 
 ;; STRUCTS
@@ -201,11 +203,21 @@
               #f
               (find-y-range lo-y-locns))))
 
-#;
-      (define/augment (after-set-next-settings lang-settings)
-                      (define sett (send (send (get-tab) get-defs) get-next-settings))
-                      (message-box "a" (format "~a" sett))
 
+      (define/augment (after-set-next-settings lang-settings)
+;                      (message-box "a" (format "~a" (read-language)))
+        (define frame (send (get-tab) get-frame))
+        (send frame see-lang lang-settings)
+        (define new-lib (send frame get-rktr-current-library))
+        (when (not (boolean? new-lib))
+          (define lib-name (string-replace (second new-lib) "-reader" ""))
+          (message-box "l" (format "libname ~a" lib-name))
+          (set! CURRENT-LIBRARY (list (first new-lib) lib-name (third new-lib)))
+          )
+        (message-box "a" (format "the new lib is ~a" CURRENT-LIBRARY))
+;                      (message-box "a" (format "~a" lang-settings))
+                    ;  (define sett (send (send (get-tab) get-defs) get-next-settings))
+                     ; (message-box "a" (format "~a" sett))
       ;                (message-box "a" (format "~a" (vector-ref (struct->vector lang-settings) 1)))
  ;                     (message-box "a" (format "~a" (drracket:language-configuration:language-settings? lang-settings)))
                       )
@@ -226,6 +238,14 @@
 ;        (end-edit-sequence))
 
       (define/augment (after-load-file loaded?)
+        (define lang-settings (send (send (get-tab) get-defs) get-next-settings))
+        (define frame (send (get-tab) get-frame))
+        (send frame see-lang lang-settings)
+        (define new-lib (send frame get-rktr-current-library))
+        (when (not (boolean? new-lib))
+         (define lib-name (string-replace (second new-lib) "-reader" ""))
+          (set! CURRENT-LIBRARY (list (first new-lib) lib-name (third new-lib))))
+
         (change-style normal-delta 0 (last-position))
         (first-highlight-refresh))
 
@@ -445,13 +465,13 @@
 
 ;; TODO: Get syntax objects past the first line for new, unsaved files.
 (define (test-remover syn filename wxme-port-flag)
-  (when (and (not filename) (= (modulo (current-seconds) EVAL_INTERVAL_SECONDS) 0))
-;    (message-box "t" (format "~a" syn))
+  (when (not filename) ;(= (modulo (current-seconds) EVAL_INTERVAL_SECONDS) 0))
+;    (message-box "t" (format "here now ~a" CURRENT-LIBRARY))
      (set! syn
        (datum->syntax #f
                       (list 'module
                             'anonymous-module
-                            'lang/htdp-beginner ; TODO: Get language dynamically
+                            CURRENT-LIBRARY ; TODO: Get language dynamically
                             (list
                               '#%module-begin
                               (syntax->datum syn)))))
@@ -466,6 +486,9 @@
     (close-input-port fileport)
     (define modname (syntax->datum (second (syntax->list filesyn))))
     (define library (syntax->datum (third (syntax->list filesyn))))
+     (message-box "a" (format "this is the lib ~a\n current: ~a" library CURRENT-LIBRARY ))
+   (when (and (not (boolean? CURRENT-LIBRARY)) (not (symbol? CURRENT-LIBRARY)))
+      (set! library CURRENT-LIBRARY))
     (when (not (symbol? modname))
       (set! modname 'anonymous-module))
     (when (or (and (list? library)

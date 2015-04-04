@@ -77,7 +77,8 @@
                                  COLOUR_ERROR_RGB_B
                                  COLOUR_ALPHA))
 
-(define CURRENT-LIBRARY 'lang/htdp-beginner)
+(define UNINITIALIZED 'uninitialized)
+(define CURRENT-LIBRARY UNINITIALIZED)
 
 
 ;; STRUCTS
@@ -203,24 +204,22 @@
               #f
               (find-y-range lo-y-locns))))
 
+      ;; Get the language selected from the GUI.
+      (define/private (get-gui-language)
+         (define frame (send (get-tab) get-frame))
+         (define new-lib (send frame get-rktr-current-library))
+         (when (not (boolean? new-lib))
+           (define lib-name (string-replace (second new-lib) "-reader" ""))
+           (set! CURRENT-LIBRARY (list (first new-lib) lib-name (third new-lib)))
+           ) ;; when
+        (when (not new-lib)
+          (set! CURRENT-LIBRARY #f)
+          ) ;; when
+        ) ;; define
 
+      ;; GUI LANGUAGE SELECTOR EVENT HANDLER
       (define/augment (after-set-next-settings lang-settings)
-;                      (message-box "a" (format "~a" (read-language)))
-        (define frame (send (get-tab) get-frame))
-        (send frame see-lang lang-settings)
-        (define new-lib (send frame get-rktr-current-library))
-        (when (not (boolean? new-lib))
-          (define lib-name (string-replace (second new-lib) "-reader" ""))
-          (message-box "l" (format "libname ~a" lib-name))
-          (set! CURRENT-LIBRARY (list (first new-lib) lib-name (third new-lib)))
-          )
-        (message-box "a" (format "the new lib is ~a" CURRENT-LIBRARY))
-;                      (message-box "a" (format "~a" lang-settings))
-                    ;  (define sett (send (send (get-tab) get-defs) get-next-settings))
-                     ; (message-box "a" (format "~a" sett))
-      ;                (message-box "a" (format "~a" (vector-ref (struct->vector lang-settings) 1)))
- ;                     (message-box "a" (format "~a" (drracket:language-configuration:language-settings? lang-settings)))
-                      )
+        (get-gui-language))
 
       ;; EDITOR EVENT HANDLERS.
       (define/augment (on-insert start len)
@@ -228,24 +227,15 @@
       (define/augment (after-insert start len)
         (end-edit-sequence)
         (check-range start (+ start len)))
-;        (end-edit-sequence))
 
       (define/augment (on-delete start len)
         (begin-edit-sequence))
       (define/augment (after-delete start len)
         (end-edit-sequence)
         (check-range start (+ start len)))
-;        (end-edit-sequence))
 
       (define/augment (after-load-file loaded?)
-        (define lang-settings (send (send (get-tab) get-defs) get-next-settings))
-        (define frame (send (get-tab) get-frame))
-        (send frame see-lang lang-settings)
-        (define new-lib (send frame get-rktr-current-library))
-        (when (not (boolean? new-lib))
-         (define lib-name (string-replace (second new-lib) "-reader" ""))
-          (set! CURRENT-LIBRARY (list (first new-lib) lib-name (third new-lib))))
-
+        (get-gui-language)
         (change-style normal-delta 0 (last-position))
         (first-highlight-refresh))
 
@@ -269,6 +259,8 @@
           (send (send (get-tab) get-frame) set-rktr-status-message ""))
         (when (highlight?)
           (set! checking-range #t)
+          (when (and (symbol? CURRENT-LIBRARY) (symbol=? CURRENT-LIBRARY UNINITIALIZED))
+            (get-gui-language))
           (let/ec k
             ; Ignore events that trigger for the entire file.
             (when (not (and (= 0 start) (= (last-position) stop)))
@@ -278,12 +270,14 @@
                 (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
                 (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
                 (define filename (get-filename))
-;                (when (not filename) (set! filename "untitled.rkt"))
                 (define wxme-flag (or (is-wxme-stream? test-in-port) (is-wxme-stream? eval-in-port)))
-                ; Ignore events for WXME-formatted files
-                ; TODO: Handle WXME files.
-                (when (is-wxme-stream? test-in-port) (set! test-in-port (wxme-port->port test-in-port)))
-                (when (is-wxme-stream? eval-in-port) (set! eval-in-port (wxme-port->port eval-in-port)))
+
+                ;; Handle WXME files.
+                (when (is-wxme-stream? test-in-port)
+                  (set! test-in-port (wxme-port->port test-in-port)))
+                (when (is-wxme-stream? eval-in-port)
+                  (set! eval-in-port (wxme-port->port eval-in-port)))
+
                 (when (and (not (is-wxme-stream? test-in-port))
                            (not (is-wxme-stream? eval-in-port)))
                   ; If anything is written to the error port while creating the ievaluator,
@@ -459,14 +453,19 @@
 
 
 (define (remove-tests src-port filename wxme-port-flag) ;; flag may be set to true for new files
-  (define retval (test-remover (synreader src-port) filename wxme-port-flag))
-  ;(message-box "title" (format "~a" retval))
-  retval)
+  (test-remover (synreader src-port) filename wxme-port-flag))
+
 
 ;; TODO: Get syntax objects past the first line for new, unsaved files.
 (define (test-remover syn filename wxme-port-flag)
-  (when (not filename) ;(= (modulo (current-seconds) EVAL_INTERVAL_SECONDS) 0))
-;    (message-box "t" (format "here now ~a" CURRENT-LIBRARY))
+  ;; If the current language is not a GUI-selected language, get the lang def (declaration).
+  (when (or (boolean? CURRENT-LIBRARY) (symbol? CURRENT-LIBRARY))
+    (set! CURRENT-LIBRARY (third (syntax->list syn))))
+
+  ;; Restructuring is needed on new files only if a language is specified from the GUI.
+  (when (and (not filename)
+             (list? CURRENT-LIBRARY))
+             ;(= (modulo (current-seconds) EVAL_INTERVAL_SECONDS) 0))
      (set! syn
        (datum->syntax #f
                       (list 'module
@@ -476,8 +475,8 @@
                               '#%module-begin
                               (syntax->datum syn)))))
      ) ;; when
+
   ;; Processor for #reader directive (DrRacket metadata).
-  ;; TODO: Get header metadata/gui language dynamically
   (when (and (path-string? filename)
              (not (and (symbol? (syntax-e (first (syntax->list syn))))
                        (symbol=? (syntax-e (first (syntax->list syn))) 'module))))
@@ -486,8 +485,8 @@
     (close-input-port fileport)
     (define modname (syntax->datum (second (syntax->list filesyn))))
     (define library (syntax->datum (third (syntax->list filesyn))))
-     (message-box "a" (format "this is the lib ~a\n current: ~a" library CURRENT-LIBRARY ))
-   (when (and (not (boolean? CURRENT-LIBRARY)) (not (symbol? CURRENT-LIBRARY)))
+     ; (message-box "a" (format "this is the lib ~a\n current: ~a" library CURRENT-LIBRARY ))
+   (when (and (not (boolean? CURRENT-LIBRARY)))
       (set! library CURRENT-LIBRARY))
     (when (not (symbol? modname))
       (set! modname 'anonymous-module))
@@ -586,5 +585,5 @@
               [else (error-test "unrecognized test variant")]))] ;; TODO: Change this to other-error ??
 
     (test-passes?-helper))
-  ) ;; define (test-passes?)
+  ) ;; define
 

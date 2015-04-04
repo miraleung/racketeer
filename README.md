@@ -29,6 +29,14 @@ git clone https://s4b8@stash.ugrad.cs.ubc.ca:8443/scm/qwerty/racketeer.git
 cd racketeer
 raco pkg install racketeer
 ```
+#### Recompiling from source
+```
+git clone https://s4b8@stash.ugrad.cs.ubc.ca:8443/scm/qwerty/racketeer.git
+cd racketeer
+raco pack --collect racketeer.plt racketeer
+```
+Install the `.plt` file as in the first section above.
+
 
 Usage
 -------

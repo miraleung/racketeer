@@ -38,6 +38,10 @@ Usage
 
 Highlighting can be toggled on or off at File -> Racketeer Test Highlighting
 
+Currently supports these test variants for the listed languages.
++ HtDP and Racket: `check-error`, `check-expect`
++ PLAI: `test`, `test/exn`, `test/pred`
+
 
 Uninstalling
 -------------

@@ -266,7 +266,7 @@
         (define eval-interval
           (if (zero? (last-position))
             1
-            (order-of-magnitude (last-position))))
+            (max 1 (order-of-magnitude (last-position)))))
         (when (>= eval-interval 2) ;; >= than 100 lines
           (set! eval-interval (* 2 eval-interval)))
         (when (and (highlight?) (= (modulo (current-seconds) eval-interval) 0))

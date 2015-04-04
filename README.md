@@ -9,7 +9,7 @@ Installation
 --------------
 
 #### From DrRacket
-1. Download [this file](./racketeer.plt) (TODO: Link to the compiled plt file)
+1. Download [this file](https://stash.ugrad.cs.ubc.ca:8443/projects/QWERTY/repos/racketeer/browse/racketeer.plt)
 2. Open DrRacket: File -> Install .plt file
 3. Select racketeer.plt
 
@@ -17,6 +17,7 @@ Installation
 
 ```
 git clone https://s4b8@stash.ugrad.cs.ubc.ca:8443/scm/qwerty/racketeer.git
+cd racketeer
 raco link racketeer
 raco setup racketeer
 ```
@@ -25,6 +26,7 @@ or
 
 ```
 git clone https://s4b8@stash.ugrad.cs.ubc.ca:8443/scm/qwerty/racketeer.git
+cd racketeer
 raco pkg install racketeer
 ```
 

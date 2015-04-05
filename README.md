@@ -13,7 +13,7 @@ Installation
 2. Open DrRacket: File -> Install .plt file
 3. Select racketeer.plt
 
-#### From source with raco
+#### From source with [raco](http://docs.racket-lang.org/raco/index.html)
 
 ```
 git clone https://s4b8@stash.ugrad.cs.ubc.ca:8443/scm/qwerty/racketeer.git

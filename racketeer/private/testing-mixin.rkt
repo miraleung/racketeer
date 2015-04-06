@@ -84,10 +84,6 @@
 
 ; Thread flags.
 (define running-thread #f)
-(define clear-highlighting-thread #f)
-(define highlighting-thread #f)
-(define statusbar-thread #f)
-(define checking-range #f)
 
 ; Test status indicators.
 (define (passed-test? ts) (symbol=? STATE_PASS (test-struct-state ts)))
@@ -185,6 +181,7 @@
 
       (define/augment (after-load-file loaded?)
         (get-gui-language)
+        (change-style normal-delta 0 (last-position))
         (first-highlight-refresh))
 
       ;; ========================================================
@@ -238,39 +235,14 @@
 
       ;; Traverse all the expressions and evaluate appropriately.
       (define/private (check-range start stop)
-        ;; Kill any threads that are still running.
-        (when (thread-is-running? running-thread)
+        (when (and (thread? running-thread) (thread-running? running-thread))
           (kill-thread running-thread))
-        (when (thread-is-running? statusbar-thread)
-          (kill-thread statusbar-thread))
-        (when (thread-is-running? clear-highlighting-thread)
-          (kill-thread clear-highlighting-thread))
-        (when (thread-is-running? highlighting-thread)
-          (kill-thread highlighting-thread))
-
-        ;; Make each new thread wait until the last one has finished.
-        (set! running-thread (thread (thunk (check-range-helper start stop))))
-        (set! statusbar-thread (thread (thunk (set-statusbar-label (get-default-statusbar-message)))))
-        (set! clear-highlighting-thread (thread (thunk (clear-highlighting))))
-        (thread-wait clear-highlighting-thread)
-        (set! highlighting-thread (thread (thunk (highlight-all-tests-helper))))
-        (thread-wait highlighting-thread)
-        ) ;; define
-
-      (define/private (thread-is-running? th)
-                      (and (not (boolean? th)) (thread? th) (thread-running? th)))
+        (set! running-thread (thread (thunk (check-range-helper start stop)))))
 
       (define/private (check-range-helper start stop)
         (when (not (highlight?))
           (send (send (get-tab) get-frame) set-rktr-status-message ""))
-        (define eval-interval
-          (if (zero? (last-position))
-            1
-            (max 1 (order-of-magnitude (last-position)))))
-        (when (>= eval-interval 2) ;; >= than 100 lines
-          (set! eval-interval (* 2 eval-interval)))
-        (when (and (highlight?) (= (modulo (current-seconds) eval-interval) 0))
-          (set! checking-range #t)
+        (when (highlight?)
           ;; Set language if not yet initialized.
           (when (and (symbol? CURRENT-LIBRARY) (symbol=? CURRENT-LIBRARY UNINITIALIZED))
             (get-gui-language))
@@ -292,11 +264,8 @@
                 (when (is-wxme-stream? test-in-port)
                   (set! test-in-port (wxme-port->port test-in-port)))
 
-                  ; If anything is written to the error port while creating the ievaluator,
+                  ; If anything is written to the error port while creating the evaluator,
                   ; write it to a string port
-                  ; TODO: Write the contents of the string port to the status bar.
-                  (define test-error-output (open-output-string))
-                  (define test-output (open-output-string))
                   (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
                                       (make-module-evaluator
                                         (remove-tests eval-in-port filename wxme-flag))))
@@ -333,19 +302,23 @@
                           (set! first-error-test-status test-rc))
 
                       ) ;; for
+                    (highlight-all-tests)
+                    (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
                     ) ;; when
                 ) ;; with-handlers
               ) ;; when
             ) ;; let
-          (set! checking-range #f)
           ) ;; when
         ) ;; define
+
+      (define/private (highlight-all-tests)
+        (queue-callback clear-highlighting #t)
+        (queue-callback highlight-all-tests-helper #t))
 
       (define (clear-highlighting)
         (begin-edit-sequence #f #f)
         (change-style normal-delta 0 (last-position))
-        (end-edit-sequence)
-        )
+        (end-edit-sequence))
 
       (define (highlight-all-tests-helper)
         (begin-edit-sequence #f #f)
@@ -362,15 +335,13 @@
         (end-edit-sequence)
         ) ;; define
 
-
       (define/private (un-highlight-all-tests)
         (set! test-table (make-hash))
-        (when (thread? clear-highlighting-thread)
-          (kill-thread clear-highlighting-thread))
-        (set! clear-highlighting-thread (thread (thunk (clear-highlighting))))
-        ) ;; define
+        (queue-callback clear-highlighting #t))
 
       (super-new))))
+
+
 
 ;; Workaround to get test results/values into a string.
 (define (stringify prefix message)
@@ -549,8 +520,7 @@
     (make-test-struct STATE_FAIL linenum start-position end-position exprval testval))
 
   (define (try-eval expr)
-    (with-handlers [ ;TODO: Need a good syntax matcher
-                    (exn:fail? (lambda (e) (error-test (exn-message e))))]
+    (with-handlers [(exn:fail? (lambda (e) (error-test (exn-message e))))]
 	  (defn-evaluator expr)))
 
   (define (test-eq actual expected)

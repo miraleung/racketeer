@@ -1,8 +1,0 @@
-Install:
-
-cd ..
-raco link racket-testing
-raco setup racket-testing
-
-^-- do this again every time the info.rkt file is changed.
-

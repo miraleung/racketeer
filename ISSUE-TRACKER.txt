@@ -5,16 +5,17 @@ Issues
 
 Unresolved
 -----------
-- Handle large files
-- test/pred
+- Find (reproduce?) any elusive sequence-contract-violation errors.
+- Clear statusbar on switching windows/tabs.
 
 Fixed/closed
 --------------
-- get languages from GUI selection
-- handle WXME files
-- white/unevaluated tests if there is some syntax error in a definition
-- can't handle strings
-- noticable lag
+- Handle large files
+- Get languages from GUI selection
+- Handle WXME files
+- White/unevaluated tests if there is some syntax error in a definition
+- Can't handle strings
+- Noticable lag
 - Loading some saved file doesn't work - highlighting turns off right away
 - Partial highlighting of tests, and overflow of highlights; anything out of test-length range of the cursor doesn't get properly highlighted, if at all
 

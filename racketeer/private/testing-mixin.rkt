@@ -119,7 +119,7 @@
   (send (make-object style-delta% 'change-nothing)
         set-delta-background "white"))
 
-;; Test expressions map.
+;; Map of test expressions.
 (define test-table (make-hash))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -198,7 +198,7 @@
           (set! mouse-event-thread
             (thread (thunk (mouseover-test-handler (send mouse-evt get-y)))))))
 
-      ;; Gui language selector event handler.
+      ;; GUI language selector event handler.
       (define/augment (after-set-next-settings lang-settings)
         (get-gui-language))
 
@@ -214,6 +214,25 @@
       (define/augment (after-delete start len)
         (set! delete-event #t)
         (end-edit-sequence))
+
+      (define/override (on-char event)
+        (begin-edit-sequence)
+        (super on-char event)
+        (end-edit-sequence))
+      (define/override (on-local-char event)
+        (begin-edit-sequence)
+        (super on-local-char event)
+        (end-edit-sequence))
+      (define/override (on-default-char event)
+        (begin-edit-sequence)
+        (super on-default-char event)
+        (end-edit-sequence))
+
+      (define/augment (on-change-style start len)
+        (begin-edit-sequence #f #f))
+      (define/augment (after-change-style start len)
+        (end-edit-sequence))
+
 
       ;; ========================================================
       ;; Class-private helpers.
@@ -252,7 +271,7 @@
               #f
               (find-y-range lo-y-locns))))
 
-      ;; Get the language selected from the GUI.
+      ;; Get the language selected from the DrRacket IDE.
       (define/private (get-gui-language)
          (define frame (send (get-tab) get-frame))
          (define new-lib (send frame get-rktr-current-library))
@@ -376,26 +395,28 @@
             ) ;; when
           ) ;; define
         ;; Start the highlighting legwork.
-        (begin-edit-sequence #f #f) ;; Take this off the undo stack.
+        ;; Do not extract into a separate method - location critical for thread safety.
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f) ;; Disable editor.
+        (begin-edit-sequence #f #f) ;; Take this off the undo stack.
         (define ch-thread (thread (lambda () (change-style normal-delta 0 (last-position)))))
         (thread-wait ch-thread)
         (hash-for-each test-table hilite)
+        (end-edit-sequence)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus) ;; Return focus.
-        (end-edit-sequence)
         ) ;; define
 
       (define/private (un-highlight-all-tests)
         (set! test-table (make-hash)) ;; Clear test table.
         ;; Unhighlight all the things.
-        (begin-edit-sequence #f #f)
+        ;; Do not extract into a separate method - location critical for thread safety.
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f)
+        (begin-edit-sequence #f #f)
         (define ch-thread (thread (lambda () (change-style normal-delta 0 (last-position)))))
         (thread-wait ch-thread)
+        (end-edit-sequence)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus)
-        (end-edit-sequence)
         ) ;; define
       (super-new))))
 
@@ -447,6 +468,8 @@
 
 
 (define test-statements (list 'test 'test/exn 'test/pred 'check-error 'check-expect))
+
+;; Syntax-object reader.
 (define (synreader src-port)
   (parameterize [(read-accept-reader  #t)
                  (read-accept-lang    #t)]
@@ -466,6 +489,7 @@
                   syntax-list)))]
     (get-syntax-list-helper src-port empty)))
 
+;; Expand all (nested) syntax-objects.
 (define (syntax-expander to-expand)
   (local [(define (syntax-expander-helper to-expand syntax-list)
             (if (empty? to-expand)

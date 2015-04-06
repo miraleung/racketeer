@@ -82,10 +82,22 @@
 ;; y-locations: the y-coordinate range of a line.
 (define-struct y-locations (top bottom))
 
-; Thread flags.
-(define running-thread #f)
+;; Thread flags.
+(define racketeer-thread #f)
+(define highlight-thread #f)
+(define mouse-event-thread #f)
 
-; Test status indicators.
+;; Editor event flags.
+(define insert-event #f)
+(define delete-event #f)
+(define focus-event #f)
+(define mouse-event #f)
+
+;; Intervals of evaluating the file.
+(define EVAL_INTERVAL 140) ; milliseconds
+(define MOUSE_EVAL_INTERVAL 175)
+
+;; Test status indicators.
 (define (passed-test? ts) (symbol=? STATE_PASS (test-struct-state ts)))
 (define (failed-test? ts) (symbol=? STATE_FAIL (test-struct-state ts)))
 (define (error-test? ts)  (symbol=? STATE_ERROR (test-struct-state ts)))
@@ -147,20 +159,44 @@
       (define/public-final (toggle-highlight!)
         (preferences:set 'drracket:racketeer-highlight-tests? (not highlight-tests?))
         (set! highlight-tests? (not highlight-tests?))
-        (if (highlight?)
-            (check-range 0 (- (last-position) 1))
-            ;; Put on main thread.
-            (un-highlight-all-tests)))
+        (when (highlight?)
+          (set! focus-event #t)
+          (start-racketeer))
+        (when (not (highlight?))
+          (stop-racketeer)
+          (clear-statusbar-label)
+          (un-highlight-all-tests)))
 
-      ;; Keyboard event handler.
+      ;; Keyboard focus handler.
       (define/override (on-focus on?)
-                       (super on-focus on?)
-                       (check-range 0 (- (last-position) 1)))
+        (super on-focus on?)
+        (when (and on? (highlight?) (not (is-racketeer-running?)) (not focus-event))
+          (set! focus-event #t)
+          (start-racketeer))
+        (when (not on?)
+          (set! focus-event #f)
+          (stop-racketeer)))
+
+      (define/private (start-racketeer)
+        (stop-racketeer)
+        (get-gui-language)
+        (set! racketeer-thread (thread (lambda () (check-range)))))
+
+      (define/private (stop-racketeer)
+        (when (is-thread-running? racketeer-thread)
+          (kill-thread racketeer-thread)))
+
+      (define/private (is-racketeer-running?)
+        (is-thread-running? racketeer-thread))
 
       ;; Mouse event handler.
       (define/override (on-event mouse-evt)
         (super on-event mouse-evt)
-        (thread (thunk (mouseover-test-handler (send mouse-evt get-y)))))
+        (set! mouse-event #t)
+        (when (and (not (boolean? first-error-test-status)) ;; Only when not all tests are passing
+                   (not (is-thread-running? mouse-event-thread))) ;; and this.
+          (set! mouse-event-thread
+            (thread (thunk (mouseover-test-handler (send mouse-evt get-y)))))))
 
       ;; Gui language selector event handler.
       (define/augment (after-set-next-settings lang-settings)
@@ -170,25 +206,30 @@
       (define/augment (on-insert start len)
         (begin-edit-sequence))
       (define/augment (after-insert start len)
-        (end-edit-sequence)
-        (check-range start (+ start len)))
+        (set! insert-event #t)
+        (end-edit-sequence))
 
       (define/augment (on-delete start len)
         (begin-edit-sequence))
       (define/augment (after-delete start len)
-        (end-edit-sequence)
-        (check-range start (+ start len)))
-
-      (define/augment (after-load-file loaded?)
-        (get-gui-language)
-        (change-style normal-delta 0 (last-position))
-        (first-highlight-refresh))
+        (set! delete-event #t)
+        (end-edit-sequence))
 
       ;; ========================================================
       ;; Class-private helpers.
       ;; ========================================================
 
       (define/private (mouseover-test-handler y-coord)
+        (when (and (highlight?)
+                   (not (zero? (last-position)))
+                   ;; Evaluates at an interval proportional to the size of the file.
+                   (= (modulo (current-milliseconds) MOUSE_EVAL_INTERVAL) 0))
+          (mouseover-helper y-coord)
+          (set! mouse-event #f))
+        (when mouse-event ;; Loop while the last mouse event wasn't handled yet.
+          (mouseover-test-handler y-coord)))
+
+      (define/private (mouseover-helper y-coord)
         (define cursor-expr (find-test-y-range y-coord))
         (if (not cursor-expr)
           (set-statusbar-label (get-default-statusbar-message))
@@ -224,124 +265,143 @@
           ) ;; when
         ) ;; define
 
-
-      (define/private (first-highlight-refresh)
-        (when (highlight?)
-          (check-range 0 (- (last-position) 1))))
-
       (define/private (set-statusbar-label message)
         (define frame (send (get-tab) get-frame))
         (send frame set-rktr-status-message message))
 
+      (define/private (clear-statusbar-label)
+        (send (send (get-tab) get-frame) set-rktr-status-message ""))
+
       ;; Traverse all the expressions and evaluate appropriately.
-      (define/private (check-range start stop)
-        (when (and (thread? running-thread) (thread-running? running-thread))
-          (kill-thread running-thread))
-        (set! running-thread (thread (thunk (check-range-helper start stop)))))
-
-      (define/private (check-range-helper start stop)
-        (when (not (highlight?))
-          (send (send (get-tab) get-frame) set-rktr-status-message ""))
-        (when (highlight?)
-          ;; Set language if not yet initialized.
-          (when (and (symbol? CURRENT-LIBRARY) (symbol=? CURRENT-LIBRARY UNINITIALIZED))
-            (get-gui-language))
-          (let/ec k
-            ; Ignore events that trigger for the entire file.
-            (when (not (and (= 0 start) (= (last-position) stop)))
-              (with-handlers [(exn:fail? (lambda (e) #f))]
-                (define src-out-port (open-output-bytes))
-                (save-port src-out-port)
-                (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
-                (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
-                (define filename (get-filename))
-                (define wxme-flag
-                  (or (is-wxme-stream? test-in-port)
-                      (is-wxme-stream? eval-in-port)))
-
-                ;; Handle WXME files.
-                ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
-                (when (is-wxme-stream? test-in-port)
-                  (set! test-in-port (wxme-port->port test-in-port)))
-
-                  ; If anything is written to the error port while creating the evaluator,
-                  ; write it to a string port
-                  (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
-                                      (make-module-evaluator
-                                        (remove-tests eval-in-port filename wxme-flag))))
-
-                  (when evaluator
-                    (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
-                    (define tests (get-tests test-in-port))
-
-                    ;; Clear statusbar.
-                    (set! first-error-test-status #f)
-                    (set! default-statusbar-message "")
-                    (set-statusbar-label default-statusbar-message)
-
-                    ;; Clear test hash table.
-                    (set! test-table (make-hash))
-
-                    (for ([test-syn tests])
-                      (define test-start (max 0 (- (syntax-position test-syn) 1)))
-                      (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
-                      (define linenum (position-line test-start))
-                      (define test-rc
-                        (test-passes? test-syn evaluator linenum test-start test-end))
-                      (define-values (ignore1 y-top) (values 0 (line-location linenum)))
-                      (define-values (ignore2 y-bottom) (values 0 (line-location linenum #f)))
-
-                      (define y-locns (make-y-locations y-top y-bottom))
-
-                      ;; New hash table entry.
-                      (hash-set! test-table y-locns test-rc)
-
-                      ;; Set the first syntax error object.
-                      ;; TODO: Optimization point?
-                      (when (and (not first-error-test-status) (not (passed-test? test-rc)))
-                          (set! first-error-test-status test-rc))
-
-                      ) ;; for
-                    (highlight-all-tests)
-                    (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
-                    ) ;; when
-                ) ;; with-handlers
-              ) ;; when
-            ) ;; let
+      (define/private (check-range)
+        (when (and (highlight?)
+                   (not (zero? (last-position)))
+                   ;; Evaluates at an interval proportional to the size of the file.
+                   (= (modulo (current-milliseconds)
+                              (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position)))))
+                              0)
+                   (or insert-event delete-event))
+          (define eval-ok (check-range-helper))
+          (when eval-ok
+            (when (is-thread-running? highlight-thread)
+                (kill-thread highlight-thread)
+                ) ;; when
+              (set! highlight-thread (thread (lambda () (highlight-all-tests))))
+              (thread-wait highlight-thread)
+             )
           ) ;; when
+        (check-range)
+        ) ;; define
+
+      (define/private (check-range-helper)
+        (define eval-successful #f)
+        (let/ec k
+          (with-handlers [(exn:fail? (lambda (e) #f))]
+            (define src-out-port (open-output-bytes))
+            (save-port src-out-port)
+            (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
+            (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
+            (define filename (get-filename))
+            (define wxme-flag
+              (or (is-wxme-stream? test-in-port)
+                  (is-wxme-stream? eval-in-port)))
+
+            ;; Handle WXME files.
+            ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
+            (when (is-wxme-stream? test-in-port)
+              (set! test-in-port (wxme-port->port test-in-port))
+              ) ;; when
+
+            ; If anything is written to the error port while creating the evaluator,
+            ; write it to a string port
+            (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
+                                (make-module-evaluator
+                                  (remove-tests eval-in-port filename wxme-flag))))
+
+            (when evaluator
+              (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
+              (define tests (get-tests test-in-port))
+
+              ;; Clear statusbar.
+              (set! first-error-test-status #f)
+              (set! default-statusbar-message "")
+              (set-statusbar-label default-statusbar-message)
+
+              ;; Clear test hash table.
+              (set! test-table (make-hash))
+
+              (for ([test-syn tests])
+                (define test-start (max 0 (- (syntax-position test-syn) 1)))
+                (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
+                (define linenum (position-line test-start))
+                (define test-rc
+                  (test-passes? test-syn evaluator linenum test-start test-end))
+                (define-values (ignore1 y-top) (values 0 (line-location linenum)))
+                (define-values (ignore2 y-bottom) (values 0 (line-location linenum #f)))
+
+                (define y-locns (make-y-locations y-top y-bottom))
+
+                ;; New hash table entry.
+                (hash-set! test-table y-locns test-rc)
+
+                ;; Set the first syntax error object.
+                (when (and (not first-error-test-status) (not (passed-test? test-rc)))
+                    (set! first-error-test-status test-rc))
+
+                ) ;; for
+              ;; Statusbar thread doesn't interfere with editor (canvas) events.
+              (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
+              (set! insert-event #f)
+              (set! delete-event #f)
+              (set! eval-successful #t)
+              ) ;; when
+            ) ;; with-handlers
+           ) ;; let
+        eval-successful
         ) ;; define
 
       (define/private (highlight-all-tests)
-        (queue-callback clear-highlighting #t)
-        (queue-callback highlight-all-tests-helper #t))
-
-      (define (clear-highlighting)
-        (begin-edit-sequence #f #f)
-        (change-style normal-delta 0 (last-position))
-        (end-edit-sequence))
+        (queue-callback highlight-all-tests-helper #f))
 
       (define (highlight-all-tests-helper)
-        (begin-edit-sequence #f #f)
         (define (hilite key-ignore test-rc)
           (define test-start (test-struct-start-posn test-rc))
           (define test-end (test-struct-end-posn test-rc))
           (when (test-struct? test-rc)
-            (change-style
+            (queue-callback (lambda () (change-style
               (cond [(error-test? test-rc)  error-delta]
                     [(passed-test? test-rc) pass-delta]
                     [(failed-test? test-rc) fail-delta])
-              test-start test-end)))
+              test-start test-end)) #f) ;; Low priority on the main eventspace thread.
+            ) ;; when
+          ) ;; define
+        ;; Start the highlighting legwork.
+        (begin-edit-sequence #f #f) ;; Take this off the undo stack.
+        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f) ;; Disable editor.
+        (define ch-thread (thread (lambda () (change-style normal-delta 0 (last-position)))))
+        (thread-wait ch-thread)
         (hash-for-each test-table hilite)
+        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
+        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus) ;; Return focus.
         (end-edit-sequence)
         ) ;; define
 
       (define/private (un-highlight-all-tests)
-        (set! test-table (make-hash))
-        (queue-callback clear-highlighting #t))
-
+        (set! test-table (make-hash)) ;; Clear test table.
+        ;; Unhighlight all the things.
+        (begin-edit-sequence #f #f)
+        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f)
+        (define ch-thread (thread (lambda () (change-style normal-delta 0 (last-position)))))
+        (thread-wait ch-thread)
+        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
+        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus)
+        (end-edit-sequence)
+        ) ;; define
       (super-new))))
 
 
+(define (is-thread-running? th)
+  (and (thread? th) (thread-running? th)))
 
 ;; Workaround to get test results/values into a string.
 (define (stringify prefix message)
@@ -392,7 +452,6 @@
                  (read-accept-lang    #t)]
     (if (is-wxme-stream? src-port)
       (wxme-read-syntax 'program src-port)
-;      (read-syntax 'program (wxme-port->port src-port))
       (read-syntax 'program src-port))))
 
 

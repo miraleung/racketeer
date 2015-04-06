@@ -24,7 +24,12 @@
     (define rktr-status-panel         'uninitialized)
     (define rktr-status-message       'uninit)
     (define rktr-current-library      'uninitialized)
-;      (send (drracket:language-configuration:language-settings-language (send (send (get-tab) get-defs) get-next-settings)) get-reader-module))
+
+    (define (statusbar-initial-label)
+      (if (preferences:get
+            'drracket:racketeer-highlight-tests?)
+        "Racketeer Status Bar"
+        ""))
 
     (define/override (file-menu:between-open-and-revert file-menu)
       (super file-menu:between-open-and-revert file-menu)
@@ -49,7 +54,7 @@
             (new message%
                  [parent rktr-status-panel]
                  [auto-resize #t]
-                 [label "Racketeer Status Bar"]))
+                 [label (statusbar-initial-label)]))
       root)
 
     ;; Message handler.

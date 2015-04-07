@@ -44,7 +44,10 @@ Usage
 2. Look at tests
 3. Repeat
 
-Highlighting can be toggled on or off at File -> Racketeer Test Highlighting
+#### Notes
+- Highlighting can be toggled on or off at File -> Racketeer Test Highlighting
+- Test highlighting is cleared while code is being edited.
+- Test variants neither defined nor included in the currently-used language and libraries are marked as errors.
 
 #### Currently supported languages and test variants
 - [HtDP](http://docs.racket-lang.org/htdp-langs/index.html) and [Racket](http://racket-lang.org/): `check-expect, check-error, check-satisfied, check-range, check-member-of`

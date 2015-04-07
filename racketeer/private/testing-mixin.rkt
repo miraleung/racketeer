@@ -93,6 +93,8 @@
 (define focus-event #f)
 (define lang-change-event #f)
 (define mouse-event #f)
+(define new-window-event #f)
+(define CURRENT-TAB #f)
 
 ;; Intervals of evaluating the file.
 (define EVAL_INTERVAL 140) ; milliseconds
@@ -173,6 +175,9 @@
         (super on-focus on?)
         (when (and on? (highlight?) (not (is-racketeer-running?)) (not focus-event))
           (set! focus-event #t)
+          (when (not (eq? CURRENT-TAB (get-tab)))
+            (set! new-window-event #t)
+            (set! CURRENT-TAB (get-tab)))
           (start-racketeer))
         (when (not on?)
           (set! focus-event #f)
@@ -190,12 +195,18 @@
       (define/private (is-racketeer-running?)
         (is-thread-running? racketeer-thread))
 
+      ;; File event handler.
+      (define/augment (after-load-file success?)
+        (clear-statusbar-label))
+
       ;; Mouse event handler.
       (define/override (on-event mouse-evt)
         (super on-event mouse-evt)
-        (set! mouse-event #t)
-        (when (and (not (boolean? first-error-test-status)) ;; Only when not all tests are passing
+        (when (and (not (send mouse-evt button-down?))
+                   (not (send mouse-evt leaving?))
+                   (not (boolean? first-error-test-status)) ;; Only when not all tests are passing
                    (not (is-thread-running? mouse-event-thread))) ;; and this.
+          (set! mouse-event #t)
           (set! mouse-event-thread
             (thread (thunk (mouseover-test-handler (send mouse-evt get-y)))))))
 
@@ -301,7 +312,7 @@
                    (= (modulo (current-milliseconds)
                               (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position)))))
                               0)
-                   (or insert-event delete-event lang-change-event))
+                   (or insert-event delete-event lang-change-event new-window-event))
           (define eval-ok (check-range-helper))
           (when eval-ok
             (when (is-thread-running? highlight-thread)
@@ -312,6 +323,7 @@
               (set! insert-event #f)
               (set! delete-event #f)
               (set! lang-change-event #f)
+              (set! new-window-event #f)
              )
           ) ;; when
         (check-range)
@@ -345,7 +357,6 @@
             (when evaluator
               (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
               (define tests (get-tests test-in-port))
-
               ;; Clear statusbar.
               (set! first-error-test-status #f)
               (set! default-statusbar-message "")
@@ -547,8 +558,9 @@
                             inner-syn)))
    ) ;; when
 
-  ;; Process #reader directive for saved files w/ DrRacket metadata header (but not WXME file).
+  ;; Process #reader directive for saved files w/ DrRackeit metadata header (but not WXME file).
   (when (and (path-string? filename)
+             (list? CURRENT-LIBRARY)
              (not (and (symbol? (syntax-e (first (syntax->list syn))))
                        (symbol=? (syntax-e (first (syntax->list syn))) 'module))))
     (define fileport (open-input-file filename))

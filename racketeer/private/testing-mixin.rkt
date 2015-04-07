@@ -260,7 +260,7 @@
         (when (and (highlight?)
                    (not (zero? (last-position)))
                    ;; Evaluates at an interval proportional to the size of the file.
-                   (= (modulo (current-milliseconds) MOUSE_EVAL_INTERVAL) 0))
+                   (zero? (modulo (current-milliseconds) MOUSE_EVAL_INTERVAL)))
           (mouseover-helper y-coord)
           (set! mouse-event #f))
         (when mouse-event ;; Loop while the last mouse event wasn't handled yet.
@@ -315,9 +315,9 @@
                    (not (zero? (last-position)))
                    (or insert-event delete-event lang-change-event new-window-event)
                    ;; Evaluates at an interval proportional to the size of the file.
-                   (= (modulo (current-milliseconds)
-                              (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position)))))
-                              0))
+                   (zero? (modulo (current-milliseconds)
+                              (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position))))))
+                   ) ;; and
           (define eval-ok (check-range-helper))
           (when (not eval-ok)
             (when (not highlighting-cleared)
@@ -692,7 +692,7 @@
                (local [(define pred-app (try-eval pred))]
                  (if (not (procedure? pred-app))
                      (error-test "second expression must be a procedure")
-                     (if (pred-app expr)
+                     (if (pred-app (evaluator expr))
                          passd-test
                          (faild-test (pred-app expr) (void)))))]
               [(list 'check-range expr min-expr max-expr)
@@ -706,7 +706,7 @@
               [(list 'check-satisfied expr pred)
                (local [(define pred-app (try-eval pred))]
                       (if (and (procedure? pred-app) (= 1 (procedure-arity pred-app)))
-                        (if (false? (pred-app expr))
+                        (if (false? (pred-app (evaluator expr)))
                           (faild-test #f "non-false value")
                           passd-test)
                         (if (not (procedure? pred-app))
@@ -720,12 +720,4 @@
               [else (error-test "unrecognized test variant")]))]
     (test-passes?-helper))
   ) ;; define
-
-(define (zipWith fn l1 l2)
-  (define (zipWithHelper fn ls1 ls2 acc)
-    (if (and (not (empty? ls1)) (not (empty? ls2)))
-      (cons (fn (first ls1) (first ls2)) (zipWith fn (rest ls1) (rest ls2)))
-      acc))
-  (zipWithHelper fn l1 l2 empty))
-
 

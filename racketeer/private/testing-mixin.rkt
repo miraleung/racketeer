@@ -24,7 +24,7 @@
 (define first-error-test-status #f)
 
 ;; Statusbar.
-(define SBAR_ALL_PASS "All tests passed")
+(define SBAR_ALL_PASS "All tests pass")
 (define default-statusbar-message "")
 
 

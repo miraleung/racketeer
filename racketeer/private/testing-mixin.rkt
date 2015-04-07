@@ -467,7 +467,8 @@
   default-statusbar-message)
 
 
-(define test-statements (list 'test 'test/exn 'test/pred 'check-error 'check-expect))
+(define test-statements (list 'test 'test/exn 'test/pred
+                              'check-error 'check-expect 'check-member-of 'check-range 'check-satisfied))
 
 ;; Syntax-object reader.
 (define (synreader src-port)
@@ -657,7 +658,37 @@
                      (if (pred-app expr)
                          passd-test
                          (faild-test (pred-app expr) (void)))))]
+              [(list 'check-range expr min-expr max-expr)
+               (if (and (number? expr) (number? min-expr) (number? max-expr))
+                 (if (<= min-expr expr max-expr)
+                   passd-test
+                   (faild-test (format "~a is not between ~a and ~a, inclusive"
+                                       expr min-expr max-expr)
+                               (void)))
+                 (error-test "all three expressions must be numbers"))]
+              [(list 'check-satisfied expr pred)
+               (local [(define pred-app (try-eval pred))]
+                      (if (and (procedure? pred-app) (= 1 (procedure-arity pred-app)))
+                        (if (false? (pred-app expr))
+                          (faild-test #f "non-false value")
+                          passd-test)
+                        (if (not (procedure? pred-app))
+                          (error-test (format "second expression ~a is not a function" pred-app))
+                          (error-test (format "second expression must be a 1-argument function; had ~a args"
+                                              (procedure-arity pred-app))))))]
+              [(list 'check-member-of expr vars ...)
+               (if (false? (member expr vars))
+                 (faild-test (format "~a differs from all given members in ~a" expr vars) (void))
+                 passd-test)]
               [else (error-test "unrecognized test variant")]))]
     (test-passes?-helper))
   ) ;; define
+
+(define (zipWith fn l1 l2)
+  (define (zipWithHelper fn ls1 ls2 acc)
+    (if (and (not (empty? ls1)) (not (empty? ls2)))
+      (cons (fn (first ls1) (first ls2)) (zipWith fn (rest ls1) (rest ls2)))
+      acc))
+  (zipWithHelper fn l1 l2 empty))
+
 

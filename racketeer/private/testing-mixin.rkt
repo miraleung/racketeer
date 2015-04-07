@@ -91,6 +91,7 @@
 (define insert-event #f)
 (define delete-event #f)
 (define focus-event #f)
+(define lang-change-event #f)
 (define mouse-event #f)
 
 ;; Intervals of evaluating the file.
@@ -200,7 +201,8 @@
 
       ;; GUI language selector event handler.
       (define/augment (after-set-next-settings lang-settings)
-        (get-gui-language))
+        (get-gui-language)
+        (set! lang-change-event #t))
 
       ;; Editor event handlers.
       (define/augment (on-insert start len)
@@ -299,7 +301,7 @@
                    (= (modulo (current-milliseconds)
                               (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position)))))
                               0)
-                   (or insert-event delete-event))
+                   (or insert-event delete-event lang-change-event))
           (define eval-ok (check-range-helper))
           (when eval-ok
             (when (is-thread-running? highlight-thread)
@@ -307,6 +309,9 @@
                 ) ;; when
               (set! highlight-thread (thread (lambda () (highlight-all-tests))))
               (thread-wait highlight-thread)
+              (set! insert-event #f)
+              (set! delete-event #f)
+              (set! lang-change-event #f)
              )
           ) ;; when
         (check-range)
@@ -370,8 +375,6 @@
                 ) ;; for
               ;; Statusbar thread doesn't interfere with editor (canvas) events.
               (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
-              (set! insert-event #f)
-              (set! delete-event #f)
               (set! eval-successful #t)
               ) ;; when
             ) ;; with-handlers

@@ -47,11 +47,11 @@ Usage
 Highlighting can be toggled on or off at File -> Racketeer Test Highlighting
 
 #### Currently supported languages and test variants
-- [HtDP](http://docs.racket-lang.org/htdp-langs/index.html) and [Racket](http://racket-lang.org/): `check-error, check-expect, check-member-of, check-range, check-satisfied`
+- [HtDP](http://docs.racket-lang.org/htdp-langs/index.html) and [Racket](http://racket-lang.org/): `check-expect, check-error, check-satisfied, check-range, check-member-of`
 
   - The Racket language (`#lang racket`) does not include these test variants by default. If you are using this language, please add `(require test-engine/racket-tests)` after the language declaration.
 
-- [PLAI](http://docs.racket-lang.org/plai/plai-scheme.html): `test`, `test/exn`, `test/pred`
+- [PLAI](http://docs.racket-lang.org/plai/plai-scheme.html): `test, test/pred, test/exn`
 
 
 Uninstalling

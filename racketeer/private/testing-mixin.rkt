@@ -313,11 +313,11 @@
       (define/private (check-range)
         (when (and (highlight?)
                    (not (zero? (last-position)))
+                   (or insert-event delete-event lang-change-event new-window-event)
                    ;; Evaluates at an interval proportional to the size of the file.
                    (= (modulo (current-milliseconds)
                               (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position)))))
-                              0)
-                   (or insert-event delete-event lang-change-event new-window-event))
+                              0))
           (define eval-ok (check-range-helper))
           (when (not eval-ok)
             (when (not highlighting-cleared)

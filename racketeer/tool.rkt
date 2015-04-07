@@ -54,6 +54,7 @@
             (new message%
                  [parent rktr-status-panel]
                  [auto-resize #t]
+                 [font (make-object font% 14 "Helvetica" 'system 'italic 'normal #f 'smoothed #f 'aligned)]
                  [label (statusbar-initial-label)]))
       root)
 

@@ -24,7 +24,7 @@
 (define first-error-test-status #f)
 
 ;; Statusbar.
-(define SBAR_ALL_PASS "All tests pass.")
+(define SBAR_ALL_PASS "All tests passed")
 (define default-statusbar-message "")
 
 
@@ -86,6 +86,7 @@
 (define racketeer-thread #f)
 (define highlight-thread #f)
 (define mouse-event-thread #f)
+(define clear-highlight-thread #f)
 
 ;; Editor event flags.
 (define insert-event #f)
@@ -94,7 +95,10 @@
 (define lang-change-event #f)
 (define mouse-event #f)
 (define new-window-event #f)
+(define file-load-event #f)
 (define CURRENT-TAB #f)
+
+(define highlighting-cleared #t)
 
 ;; Intervals of evaluating the file.
 (define EVAL_INTERVAL 140) ; milliseconds
@@ -197,6 +201,7 @@
 
       ;; File event handler.
       (define/augment (after-load-file success?)
+        (set! file-load-event #t)
         (clear-statusbar-label))
 
       ;; Mouse event handler.
@@ -264,7 +269,7 @@
       (define/private (mouseover-helper y-coord)
         (define cursor-expr (find-test-y-range y-coord))
         (if (not cursor-expr)
-          (set-statusbar-label (get-default-statusbar-message))
+          (set-statusbar-to-default)
           (set-statusbar-label (get-test-message cursor-expr))))
 
       ;; exact-integer -> (or/c passed-test failed-test error-test #f)
@@ -314,6 +319,16 @@
                               0)
                    (or insert-event delete-event lang-change-event new-window-event))
           (define eval-ok (check-range-helper))
+          (when (not eval-ok)
+            (when (not highlighting-cleared)
+              (when (is-thread-running? highlight-thread)
+                (kill-thread highlight-thread))
+              (when (not (is-thread-running? clear-highlight-thread))
+                (set! clear-highlight-thread (thread (lambda () (un-highlight-all-tests))))
+                (thread-wait clear-highlight-thread)))
+            (when (or (not highlighting-cleared) file-load-event)
+              (set! default-statusbar-message "syntax error in expressions")
+              (set-statusbar-to-default)))
           (when eval-ok
             (when (is-thread-running? highlight-thread)
                 (kill-thread highlight-thread)
@@ -357,13 +372,13 @@
             (when evaluator
               (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
               (define tests (get-tests test-in-port))
-              ;; Clear statusbar.
-              (set! first-error-test-status #f)
-              (set! default-statusbar-message "")
-              (set-statusbar-label default-statusbar-message)
 
-              ;; Clear test hash table.
+              ;; Clear test hash table, test status.
               (set! test-table (make-hash))
+              (set! first-error-test-status #f)
+
+              ;; Clear statusbar
+              (set-statusbar-label "evaluating expressions ...")
 
               (for ([test-syn tests])
                 (define test-start (max 0 (- (syntax-position test-syn) 1)))
@@ -385,7 +400,8 @@
 
                 ) ;; for
               ;; Statusbar thread doesn't interfere with editor (canvas) events.
-              (thread (thunk (set-statusbar-label (get-default-statusbar-message))))
+              (set! default-statusbar-message (get-test-message first-error-test-status))
+              (thread (lambda () (set-statusbar-to-default)))
               (set! eval-successful #t)
               ) ;; when
             ) ;; with-handlers
@@ -412,15 +428,20 @@
         ;; Do not extract into a separate method - location critical for thread safety.
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f) ;; Disable editor.
         (begin-edit-sequence #f #f) ;; Take this off the undo stack.
-        (define ch-thread (thread (lambda () (change-style normal-delta 0 (last-position)))))
-        (thread-wait ch-thread)
+        (when (not highlighting-cleared)
+          (define ch-thread (thread (lambda () (change-style normal-delta 0 (last-position)))))
+          (thread-wait ch-thread))
         (hash-for-each test-table hilite)
         (end-edit-sequence)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus) ;; Return focus.
+        (set! highlighting-cleared #f)
         ) ;; define
 
       (define/private (un-highlight-all-tests)
+        (queue-callback un-highlight-all-tests-helper #f))
+
+      (define (un-highlight-all-tests-helper)
         (set! test-table (make-hash)) ;; Clear test table.
         ;; Unhighlight all the things.
         ;; Do not extract into a separate method - location critical for thread safety.
@@ -431,7 +452,12 @@
         (end-edit-sequence)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus)
+        (set! highlighting-cleared #t)
         ) ;; define
+
+      (define (set-statusbar-to-default)
+        (set-statusbar-label default-statusbar-message))
+
       (super-new))))
 
 
@@ -476,13 +502,9 @@
                                    (test-struct-error-or-value1 ts)))]))
 
 
-(define (get-default-statusbar-message)
-  (set! default-statusbar-message (get-test-message first-error-test-status))
-  default-statusbar-message)
-
-
-(define test-statements (list 'test 'test/exn 'test/pred
-                              'check-error 'check-expect 'check-member-of 'check-range 'check-satisfied))
+(define test-statements (list 'test 'test/pred 'test/exn
+                              'check-expect 'check-error
+                              'check-satisfied 'check-range 'check-member-of))
 
 ;; Syntax-object reader.
 (define (synreader src-port)

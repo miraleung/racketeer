@@ -368,7 +368,6 @@
             (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
                                 (make-module-evaluator
                                   (remove-tests eval-in-port filename wxme-flag))))
-
             (when evaluator
               (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
               (define tests (get-tests test-in-port))
@@ -564,7 +563,7 @@
     (set! CURRENT-LIBRARY (third (syntax->list syn))))
   (define inner-syn (list '#%module-begin (syntax->datum syn)))
 
-  (when wxme-port-flag
+  (when (and wxme-port-flag (symbol=? 'begin (first (syntax->datum syn))))
     ;; Strip out the first 'begin included by wxme-read-syntax.
     (set! inner-syn
       (foldr cons empty (cons '#%module-begin (rest (syntax->datum syn))))))

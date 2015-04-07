@@ -372,6 +372,7 @@
             (when evaluator
               (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
               (define tests (get-tests test-in-port))
+              (when wxme-flag (set! tests (reverse tests)))
 
               ;; Clear test hash table, test status.
               (set! test-table (make-hash))
@@ -717,7 +718,25 @@
                (if (false? (member expr vars))
                  (faild-test (format "~a differs from all given members in ~a" expr vars) (void))
                  passd-test)]
-              [else (error-test "unrecognized test variant")]))]
-    (test-passes?-helper))
+              [else (error-test "unrecognized test variant")]))
+
+    (define litmus-test
+      (match test-exp
+        [(list 'check-expect ignore1 ignore2) '(check-expect 1 1)]
+        [(list 'test ignore1 ignore2)         '(test 1 1)]
+        [(list 'test/exn ignore1 ignore2)     '(test/exn (raise-user-error "a") "")]
+        [(list 'check-error ignore1 ignore2)  '(check-error (/ 1 0) "/: division by zero")]
+        [(list 'test/pred ignore1 ignore2)    '(test/pred 1 odd?)]
+        [(list 'check-range ignore1 ignore2)  '(check-range 1 2 1)]
+        [(list 'check-satisfied ignore1 ignore2) '(check-satisfied 1 odd?)]
+        [(list 'check-member-of  ignore1 ignore2 ...) '(check-member-of 2 1 2)]
+        [else '(check-error 1 "")])) ; no such test variant
+
+    (define (check-test)
+      (with-handlers [(exn:fail? (lambda (e) #f))] (defn-evaluator litmus-test)))]
+
+    (if (false? (check-test))
+      (error-test "test variant not defined; please check the language or required libraries")
+      (test-passes?-helper)))
   ) ;; define
 

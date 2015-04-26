@@ -10,10 +10,7 @@ Installation
 
 #### From DrRacket
 1. In DrRacket: File -> Package Manager ->  Do What I Mean
-2. Paste this URL into the Package Source textbox:
-```
-  git://github.com/miraleung/racketeer/
-```
+2. Paste this URL into the Package Source textbox: `git://github.com/miraleung/racketeer`
 3. Click install
 
 If you don't see Package Manager in the menu, your version of Racket may need to be updated.

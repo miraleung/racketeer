@@ -89,7 +89,7 @@
 (define clear-highlight-thread #f)
 
 ;; Editor event flags.
-(define insert-event #f)
+(define insert-event-counter 0)
 (define delete-event #f)
 (define focus-event #f)
 (define lang-change-event #f)
@@ -112,19 +112,19 @@
 ;; Text highlighting.
 (define pass-delta
   (send (make-object style-delta% 'change-nothing)
-        set-delta-background COLOUR_PASS))
+        set-delta-foreground COLOUR_PASS))
 
 (define fail-delta
   (send (make-object style-delta% 'change-nothing)
-        set-delta-background COLOUR_FAIL))
+        set-delta-foreground COLOUR_FAIL))
 
 (define error-delta
   (send (make-object style-delta% 'change-nothing)
-        set-delta-background COLOUR_ERROR))
+        set-delta-foreground COLOUR_ERROR))
 
 (define normal-delta
   (send (make-object style-delta% 'change-nothing)
-        set-delta-background "white"))
+        set-transparent-text-backing-on #f))
 
 ;; Map of test expressions.
 (define test-table (make-hash))
@@ -224,7 +224,7 @@
       (define/augment (on-insert start len)
         (begin-edit-sequence))
       (define/augment (after-insert start len)
-        (set! insert-event #t)
+        (set! insert-event-counter (+ insert-event-counter 1))
         (end-edit-sequence))
 
       (define/augment (on-delete start len)
@@ -313,11 +313,13 @@
       (define/private (check-range)
         (when (and (highlight?)
                    (not (zero? (last-position)))
-                   (or insert-event delete-event lang-change-event new-window-event)
+                   (or (> insert-event-counter 0)
+                       (and (or delete-event lang-change-event new-window-event)
                    ;; Evaluates at an interval proportional to the size of the file.
-                   (zero? (modulo (current-milliseconds)
-                              (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position))))))
+                            (zero? (modulo (current-milliseconds)
+                                           (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position))))))))
                    ) ;; and
+          (define local-insert-event-counter insert-event-counter)
           (define eval-ok (check-range-helper))
           (when (not eval-ok)
             (when (not highlighting-cleared)
@@ -335,7 +337,9 @@
                 ) ;; when
               (set! highlight-thread (thread (lambda () (highlight-all-tests))))
               (thread-wait highlight-thread)
-              (set! insert-event #f)
+              (if (> insert-event-counter local-insert-event-counter) ;; changed during evaluation
+                (set! insert-event-counter (- insert-event-counter 1))
+                (set! insert-event-counter 0))
               (set! delete-event #f)
               (set! lang-change-event #f)
               (set! new-window-event #f)

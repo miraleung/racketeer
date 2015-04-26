@@ -557,19 +557,29 @@
 
 
 (define (remove-tests src-port filename wxme-port-flag) ;; flag could be set to true for new files
-  (test-remover (synreader src-port) filename wxme-port-flag))
+  (define the-syntax #f)
+  (if (and (path-string? filename) ;; is a metadata-header file
+           (not (boolean? CURRENT-LIBRARY))
+           (not wxme-port-flag))
+    (set! the-syntax (datum->syntax #f (get-syntax-list src-port)))
+    (set! the-syntax (synreader src-port)))
+  (test-remover the-syntax filename wxme-port-flag))
 
 ;; Remove test expressions and process syntax object for evaluation.
 (define (test-remover syn filename wxme-port-flag)
   ;; If the current language is not a GUI-selected language, get the lang def (declaration).
   (when (or (boolean? CURRENT-LIBRARY) (symbol? CURRENT-LIBRARY))
     (set! CURRENT-LIBRARY (third (syntax->list syn))))
-  (define inner-syn (list '#%module-begin (syntax->datum syn)))
+  (define inner-syn
+    (if (list? (syntax->datum syn))
+      (cons '#%module-begin (syntax->datum syn))
+      (list '#%module-begin (syntax->datum syn))))
 
   (when (and wxme-port-flag (symbol=? 'begin (first (syntax->datum syn))))
     ;; Strip out the first 'begin included by wxme-read-syntax.
     (set! inner-syn
-      (foldr cons empty (cons '#%module-begin (rest (syntax->datum syn))))))
+      (foldr cons empty (cons '#%module-begin (rest (syntax->datum syn)))))
+    )
 
   ;; Restructuring is needed on new files only if a language is specified from the GUI.
   ;; New non-WXME files are fine as they are.
@@ -583,7 +593,7 @@
                             inner-syn)))
    ) ;; when
 
-  ;; Process #reader directive for saved files w/ DrRackeit metadata header (but not WXME file).
+  ;; Process #reader directive for saved files w/ DrRacket metadata header (but not WXME file).
   (when (and (path-string? filename)
              (list? CURRENT-LIBRARY)
              (not (and (symbol? (syntax-e (first (syntax->list syn))))

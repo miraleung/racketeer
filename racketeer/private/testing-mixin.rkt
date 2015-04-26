@@ -336,13 +336,15 @@
                 ) ;; when
               (set! highlight-thread (thread (lambda () (highlight-all-tests))))
               (thread-wait highlight-thread)
-              (if (> insert-event-counter local-insert-event-counter) ;; changed during evaluation
-                (set! insert-event-counter (- insert-event-counter 1))
-                (set! insert-event-counter 0))
-              (set! delete-event #f)
-              (set! lang-change-event #f)
-              (set! new-window-event #f)
-             )
+              ) ;; when eval-ok
+
+          (if (> insert-event-counter local-insert-event-counter) ;; changed during evaluation
+              (set! insert-event-counter (- insert-event-counter 1))
+              (set! insert-event-counter 0))
+            (set! delete-event #f)
+            (set! lang-change-event #f)
+            (set! new-window-event #f)
+
           ) ;; when
         (check-range)
         ) ;; define

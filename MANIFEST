@@ -1,0 +1,10 @@
+MANIFEST
+racketeer/compiled/info_rkt.dep
+racketeer/compiled/info_rkt.zo
+racketeer/compiled/tool_rkt.dep
+racketeer/compiled/tool_rkt.zo
+racketeer/info.rkt
+racketeer/private/compiled/testing-mixin_rkt.dep
+racketeer/private/compiled/testing-mixin_rkt.zo
+racketeer/private/testing-mixin.rkt
+racketeer/tool.rkt

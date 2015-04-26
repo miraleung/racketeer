@@ -112,19 +112,18 @@
 ;; Text highlighting.
 (define pass-delta
   (send (make-object style-delta% 'change-nothing)
-        set-delta-foreground COLOUR_PASS))
+        set-delta-background COLOUR_PASS))
 
 (define fail-delta
   (send (make-object style-delta% 'change-nothing)
-        set-delta-foreground COLOUR_FAIL))
+        set-delta-background COLOUR_FAIL))
 
 (define error-delta
   (send (make-object style-delta% 'change-nothing)
-        set-delta-foreground COLOUR_ERROR))
+        set-delta-background COLOUR_ERROR))
 
 (define normal-delta
-  (send (make-object style-delta% 'change-nothing)
-        set-transparent-text-backing-on #f))
+  (make-object style-delta% 'change-nothing))
 
 ;; Map of test expressions.
 (define test-table (make-hash))

@@ -9,34 +9,29 @@ Installation
 --------------
 
 #### From DrRacket
-1. Download [this file](https://raw.githubusercontent.com/miraleung/racketeer/master/racketeer.plt)
-2. Open DrRacket: File -> Install .plt file
-3. Select racketeer.plt
+1. In DrRacket: File -> Package Manager ->  Do What I Mean
+2. Paste this URL into the Package Source textbox:
+```
+  git://github.com/miraleung/racketeer/
+```
+3. Click install
 
-#### From source with [raco](http://docs.racket-lang.org/raco/index.html)
+If you don't see Package Manager in the menu, your version of Racket may need to be updated.
 
+#### From [raco](http://docs.racket-lang.org/raco/index.html)
+```
+raco pkg install racketeer
+```
+
+#### From source with raco
+
+This will allow local changes to the tool's source files to be reflected in DrRacket.
 ```
 git clone https://github.com/miraleung/racketeer.git
 cd racketeer
 raco link racketeer
 raco setup racketeer
 ```
-
-or
-
-```
-git clone https://github.com/miraleung/racketeer.git
-cd racketeer
-raco pkg install racketeer
-```
-#### Recompiling from source
-```
-git clone https://github.com/miraleung/racketeer.git
-cd racketeer
-raco pack --collect racketeer.plt racketeer
-```
-Install the `.plt` file as in the first section above.
-
 
 Usage
 -------
@@ -61,11 +56,11 @@ Uninstalling
 -------------
 
 #### From DrRacket
-In DrRacket, go to Preferences -> Tool and disable the plugin.
+1. In DrRacket: File -> Package Manager -> Currently Installed
+2. Filter for "racketeer"
+3. Remove
 
-\* DrRacket doesn't yet have a good way to completely remove plugins.
-
-#### From source
+#### From raco
 ```
-raco pkg remove plugin-name
+raco pkg remove racketeer
 ```

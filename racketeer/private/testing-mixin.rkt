@@ -11,6 +11,7 @@
          racket/match
          racket/sandbox
          test-engine/racket-tests
+         rackunit
          unstable/function
          wxme)
 
@@ -105,9 +106,9 @@
 (define MOUSE_EVAL_INTERVAL 175)
 
 ;; Test status indicators.
-(define (passed-test? ts) (symbol=? STATE_PASS (test-struct-state ts)))
-(define (failed-test? ts) (symbol=? STATE_FAIL (test-struct-state ts)))
-(define (error-test? ts)  (symbol=? STATE_ERROR (test-struct-state ts)))
+(define (passed-test? ts) (and (test-struct? ts) (symbol=? STATE_PASS (test-struct-state ts))))
+(define (failed-test? ts) (and (test-struct? ts) (symbol=? STATE_FAIL (test-struct-state ts))))
+(define (error-test? ts) (and (test-struct? ts) (symbol=? STATE_ERROR (test-struct-state ts))))
 
 ;; Text highlighting.
 (define pass-delta
@@ -370,7 +371,8 @@
 
             ; If anything is written to the error port while creating the evaluator,
             ; write it to a string port
-            (define evaluator (parameterize [(sandbox-eval-limits '(10 20))]
+            (define evaluator (parameterize [(sandbox-eval-limits '(10 20))
+                                             (sandbox-namespace-specs (append (sandbox-namespace-specs) '(rackunit)))]
                                 (make-module-evaluator
                                   (remove-tests eval-in-port filename wxme-flag))))
             (when evaluator
@@ -509,7 +511,14 @@
 
 (define test-statements (list 'test 'test/pred 'test/exn
                               'check-expect 'check-error
-                              'check-satisfied 'check-range 'check-member-of))
+                              'check-satisfied 'check-range 'check-member-of
+                              'check-equal? 'check-eqv? 'check-eq?
+                              'check-not-equal? 'check-not-eqv? 'check-not-eq?
+                              'check-pred 'check-= 'check-true 'check-false 'check-not-false
+                              'check-exn 'check-not-exn
+                              'check-regexp-match 'check-match
+                              'check 'fail
+                              ))
 
 ;; Syntax-object reader.
 (define (synreader src-port)
@@ -732,25 +741,29 @@
                (if (false? (member expr vars))
                  (faild-test (format "~a differs from all given members in ~a" expr vars) (void))
                  passd-test)]
-              [else (error-test "unrecognized test variant")]))
+              [expr
+               (define maybe-test-suite (try-eval `(test-suite "test" ,expr)))
+               (cond
+                 [(error-test? maybe-test-suite) maybe-test-suite]
+                 [else
+                  (match (flatten (run-test maybe-test-suite))
+                    [(list)
+                     (error-test (format "unrecognized test variant: in ~a" expr))]
+                    [(list (? test-success? rs) ...)
+                     passd-test]
+                    [(list (? test-success?) ... (and r (not (? test-success?))) _ ...)
+                     (match r
+                       [(test-failure name (exn:test:check msg mks chk-info-lst))
+                        (match chk-info-lst
+                          [(list (check-info 'actual actual) (check-info 'expected expected) _ ...)
+                           (faild-test actual expected)]
+                          [(list (check-info 'actual actual) _ ...)
+                           (faild-test actual (void))]
+                          [else
+                           (faild-test (void) (void))])]
+                       [(test-error name exn)
+                        (error-test (exn-message exn))])])])]))]
 
-    (define litmus-test
-      (match test-exp
-        [(list 'check-expect ignore1 ignore2) '(check-expect 1 1)]
-        [(list 'test ignore1 ignore2)         '(test 1 1)]
-        [(list 'test/exn ignore1 ignore2)     '(test/exn (raise-user-error "a") "")]
-        [(list 'check-error ignore1 ignore2)  '(check-error (/ 1 0) "/: division by zero")]
-        [(list 'test/pred ignore1 ignore2)    '(test/pred 1 odd?)]
-        [(list 'check-range ignore1 ignore2)  '(check-range 1 2 1)]
-        [(list 'check-satisfied ignore1 ignore2) '(check-satisfied 1 odd?)]
-        [(list 'check-member-of  ignore1 ignore2 ...) '(check-member-of 2 1 2)]
-        [else '(check-error 1 "")])) ; no such test variant
-
-    (define (check-test)
-      (with-handlers [(exn:fail? (lambda (e) #f))] (defn-evaluator litmus-test)))]
-
-    (if (false? (check-test))
-      (error-test "test variant not defined; please check the language or required libraries")
-      (test-passes?-helper)))
+    (test-passes?-helper))
   ) ;; define
 

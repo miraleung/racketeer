@@ -47,6 +47,7 @@ Usage
   - The Racket language (`#lang racket`) does not include these test variants by default. If you are using this language, please add `(require test-engine/racket-tests)` after the language declaration.
 
 - [PLAI](http://docs.racket-lang.org/plai/plai-scheme.html): `test, test/pred, test/exn`
+- [RackUnit](http://docs.racket-lang.org/rackunit/index.html): All `check` variants
 
 
 Uninstalling

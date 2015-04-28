@@ -802,7 +802,8 @@
               ;; Rackunit tests
               [expr
                (define using-rackunit?
-                 (rackunit-check-exn-handler `(namespace-variable-value 'test-suite)))
+                 (rackunit-check-exn-handler
+                   "(require racket) (namespace-variable-value 'test-suite)"))
                (if using-rackunit?
                  (rackunit-test-handler expr)
                  (error-test UNREC_TEST_VARIANT))]

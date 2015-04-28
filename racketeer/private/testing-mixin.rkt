@@ -514,9 +514,7 @@
                                    (test-struct-error-or-value1 ts)))]))
 
 
-(define test-statements (list 'test 'test/pred 'test/exn
-                              'check-expect 'check-error
-                              'check-satisfied 'check-range 'check-member-of
+(define rackunit-test-stms (list
                               'check-equal? 'check-eqv? 'check-eq?
                               'check-not-equal? 'check-not-eqv? 'check-not-eq?
                               'check-pred 'check-= 'check-true 'check-false 'check-not-false
@@ -524,6 +522,13 @@
                               'check-regexp-match 'check-match
                               'check 'fail
                               ))
+
+(define test-statements (append
+                          (list 'test 'test/pred 'test/exn
+                              'check-expect 'check-error
+                              'check-satisfied 'check-range 'check-member-of)
+                          rackunit-test-stms))
+
 
 ;; Syntax-object reader.
 (define (synreader src-port)
@@ -721,10 +726,18 @@
          (define (check-test)
            (with-handlers [(exn:fail? (lambda (e) #f))] (defn-evaluator litmus-test)))
 
+         ;; Test variant membership check for non-rackunit tests.
          (define (do-check-test fn-do-test)
            (if (false? (check-test))
              (error-test UNREC_TEST_VARIANT)
              (fn-do-test)))
+
+         ;; For handling exceptions when checking whether we're using rackunit.
+         (define-syntax rackunit-check-exn-handler
+           (syntax-rules ()
+             ((_ body ...)
+              (with-handlers [(exn:fail:syntax? (lambda (exn) #t))
+                              (exn:fail? (lambda (exn) #f))] (defn-evaluator body) ...))))
 
           (define (test-passes?-helper)
             (match test-exp
@@ -788,7 +801,16 @@
 
               ;; Rackunit tests
               [expr
-               (define maybe-test-suite (try-eval `(test-suite "test" ,expr)))
+               (define using-rackunit?
+                 (rackunit-check-exn-handler `(namespace-variable-value 'test-suite)))
+               (if using-rackunit?
+                 (rackunit-test-handler expr)
+                 (error-test UNREC_TEST_VARIANT))]
+              [else (error-test UNREC_TEST_VARIANT)]
+              )
+            ) ;; define (test-passes?-helper)
+          (define (rackunit-test-handler expr)
+            (define maybe-test-suite (try-eval `(test-suite "test" ,expr)))
                (cond
                  [(error-test? maybe-test-suite) maybe-test-suite]
                  [else
@@ -808,9 +830,9 @@
                           [else
                            (faild-test (void) (void))])]
                        [(test-error name exn)
-                        (error-test (exn-message exn))])])])]
-              [else (error-test UNREC_TEST_VARIANT)]
-              ))]
+                        (error-test (exn-message exn))])])])
+               ) ;; define (rackunit-test-handler)
+          ]
 
 
     (test-passes?-helper))

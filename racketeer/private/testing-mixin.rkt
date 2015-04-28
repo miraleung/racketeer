@@ -577,13 +577,19 @@
   (test-remover the-syntax filename wxme-port-flag))
 
 ;; Remove test expressions and process syntax object for evaluation.
+;; There are three cases to handle:
+;;  - Plain-text source (i.e. #lang declaration)
+;;  - WXME-format
+;;  - Files with metadata header lines (invisible from DrRacket).
 (define (test-remover syn filename wxme-port-flag)
   ;; If the current language is not a GUI-selected language, get the lang def (declaration).
   (when (or (boolean? CURRENT-LIBRARY) (symbol? CURRENT-LIBRARY))
     (set! CURRENT-LIBRARY (third (syntax->list syn))))
   (define inner-syn
-    (if (list? (syntax->datum syn))
-      (cons '#%module-begin (syntax->datum syn))
+    (if (and (list? (syntax->datum syn))
+             (list? CURRENT-LIBRARY)
+             (not wxme-port-flag))
+      (cons '#%module-begin (syntax->datum syn)) ;; only for metadata-header files
       (list '#%module-begin (syntax->datum syn))))
 
   (when (and wxme-port-flag (symbol=? 'begin (first (syntax->datum syn))))

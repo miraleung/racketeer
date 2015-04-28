@@ -108,7 +108,7 @@
 ;; Test status indicators.
 (define (passed-test? ts) (and (test-struct? ts) (symbol=? STATE_PASS (test-struct-state ts))))
 (define (failed-test? ts) (and (test-struct? ts) (symbol=? STATE_FAIL (test-struct-state ts))))
-(define (error-test? ts) (and (test-struct? ts) (symbol=? STATE_ERROR (test-struct-state ts))))
+(define (error-test? ts)  (and (test-struct? ts) (symbol=? STATE_ERROR (test-struct-state ts))))
 
 ;; Text highlighting.
 (define pass-delta
@@ -693,10 +693,8 @@
             (exact->inexact expected-prime)
             expected-prime))
         ]
-      (cond [(and (test-struct? actual-val)
-                  (error-test? actual-val)) actual-val]
-            [(and (test-struct? expected-val)
-                  (error-test? expected-val)) expected-val]
+      (cond [(error-test? actual-val) actual-val]
+            [(error-test? expected-val) expected-val]
             ;; Needs to be equal? instead of eq? for object comparison.
             [else (if (equal? actual-val expected-val)
                       passd-test
@@ -710,8 +708,7 @@
                (if (not (string? str))
                    (error-test "second expression must be a string")
                    (local [(define actual-val (try-eval actual))]
-                     (if (and (test-struct? actual-val)
-                              (error-test? actual-val))
+                     (if (error-test? actual-val)
                          passd-test
                          (faild-test actual-val "an exception"))))]
               [(list 'check-error actual)

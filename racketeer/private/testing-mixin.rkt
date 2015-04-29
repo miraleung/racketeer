@@ -12,6 +12,7 @@
          racket/sandbox
          test-engine/racket-tests
          rackunit
+         syntax-color/module-lexer
          unstable/function
          wxme)
 
@@ -150,6 +151,7 @@
                dc-location-to-editor-location
                end-edit-sequence
                find-newline
+               freeze-colorer
                get-filename
                get-tab
                get-text
@@ -162,7 +164,9 @@
                position-line
                position-location
                save-port
-               set-styles-sticky)
+               set-styles-sticky
+               thaw-colorer
+               )
 
       ;; Highlighting handlers.
       (define highlight-tests? (preferences:get 'drracket:racketeer-highlight-tests?))
@@ -251,12 +255,6 @@
         (super on-default-char event)
         (end-edit-sequence))
 
-      (define/augment (on-change-style start len)
-        (begin-edit-sequence #f #f))
-      (define/augment (after-change-style start len)
-        (end-edit-sequence))
-
-
       ;; ========================================================
       ;; Class-private helpers.
       ;; ========================================================
@@ -326,6 +324,7 @@
                    ) ;; and
           (define local-insert-event-counter insert-event-counter)
           (define eval-ok (check-range-helper))
+
           (when (not eval-ok)
             (when (not highlighting-cleared)
               (when (is-thread-running? highlight-thread)
@@ -335,14 +334,11 @@
                 (thread-wait clear-highlight-thread)))
             (when (or (not highlighting-cleared) file-load-event)
               (set! default-statusbar-message "syntax error in expressions")
-              (set-statusbar-to-default)))
+              (set-statusbar-to-default))
+            ) ;; when (not eval-ok)
+
           (when eval-ok
-            (when (is-thread-running? highlight-thread)
-                (kill-thread highlight-thread)
-                ) ;; when
-              (set! highlight-thread (thread (lambda () (highlight-all-tests))))
-              (thread-wait highlight-thread)
-              ) ;; when eval-ok
+            (highlight-all-tests))
 
           (if (> insert-event-counter local-insert-event-counter) ;; changed during evaluation
               (set! insert-event-counter (- insert-event-counter 1))
@@ -429,7 +425,8 @@
           (define test-start (test-struct-start-posn test-rc))
           (define test-end (test-struct-end-posn test-rc))
           (when (test-struct? test-rc)
-            (queue-callback (lambda () (change-style
+            (queue-callback (lambda ()
+             (change-style
               (cond [(error-test? test-rc)  error-delta]
                     [(passed-test? test-rc) pass-delta]
                     [(failed-test? test-rc) fail-delta])
@@ -438,33 +435,35 @@
           ) ;; define
         ;; Start the highlighting legwork.
         ;; Do not extract into a separate method - location critical for thread safety.
-        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f) ;; Disable editor.
+        (freeze-colorer) ;; Temporarily freeze the syntax colorer.
         (begin-edit-sequence #f #f) ;; Take this off the undo stack.
+        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f) ;; Disable editor.
         (when (not highlighting-cleared)
-          (define ch-thread (thread (lambda () (change-style normal-delta 0 (last-position)))))
-          (thread-wait ch-thread))
+          (queue-callback (lambda () (change-style normal-delta 0 (last-position))) #f))
         (hash-for-each test-table hilite)
-        (end-edit-sequence)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus) ;; Return focus.
+        (end-edit-sequence)
         (set! highlighting-cleared #f)
+        (thaw-colorer)
         ) ;; define
 
       (define/private (un-highlight-all-tests)
         (queue-callback un-highlight-all-tests-helper #f))
 
       (define (un-highlight-all-tests-helper)
+        (freeze-colorer)
         (set! test-table (make-hash)) ;; Clear test table.
         ;; Unhighlight all the things.
         ;; Do not extract into a separate method - location critical for thread safety.
-        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f)
         (begin-edit-sequence #f #f)
-        (define ch-thread (thread (lambda () (change-style normal-delta 0 (last-position)))))
-        (thread-wait ch-thread)
-        (end-edit-sequence)
+        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f)
+          (queue-callback (lambda () (change-style normal-delta 0 (last-position))) #f)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
         (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus)
+        (end-edit-sequence)
         (set! highlighting-cleared #t)
+        (thaw-colorer)
         ) ;; define
 
       (define (set-statusbar-to-default)

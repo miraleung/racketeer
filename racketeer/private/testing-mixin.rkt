@@ -499,13 +499,22 @@
         [(passed-test? ts) (string-append (linenum-prefix ts) "test passes")]
         [(failed-test? ts)
          (local [(define prefix (linenum-prefix ts))
+                 (define max-str-len 35)
                  (define value1 (test-struct-error-or-value1 ts))
-                 (define part1 (stringify "actual value" value1))
                  (define value2 (test-struct-value2 ts))
-                 (define part2
+                 (define part1-str (stringify "actual value" value1))
+                 (define part2-str
                    (if (void? value2)
                        ""
-                       (stringify "; expected" value2)))]
+                       (stringify "; expected" value2)))
+                 (define (process-string str)
+                   (if (> (string-length str) max-str-len)
+                     (string-append
+                       (substring str 0 max-str-len)
+                       "...")
+                     str))
+                 (define part1 (process-string part1-str))
+                 (define part2 (process-string part2-str))]
            (string-append prefix part1 part2))]
         [(error-test? ts)
          (string-append (linenum-prefix ts)

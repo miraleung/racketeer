@@ -304,8 +304,10 @@
                    run-racketeer?
                    (not (zero? (last-position))))
 
-          ;; Do not remove: this must be done, but only for large files.
-          (when (is-large-file?) (get-gui-language))
+          ;; Do not remove: this must be done, but only for large or #lang decl files.
+          (when (or (is-large-file?)
+                    (not (list? CURRENT-LIBRARY)))
+            (get-gui-language))
 
           (define eval-ok (check-range-helper))
           (when (not eval-ok)

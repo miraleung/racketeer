@@ -20,6 +20,8 @@
 ;; Messages
 (define UNREC_TEST_VARIANT "unrecognized test variant")
 
+;; File size
+(define LARGE_FILE_NUM_LINES 250)
 
 ;; Test states
 (define STATE_PASS 'pass)
@@ -89,6 +91,10 @@
 ;; y-locations: the y-coordinate range of a line.
 (define-struct y-locations (top bottom))
 
+;; Highlight-on flag.
+(define run-racketeer? #f)
+(define racketeer-running? #f)
+
 ;; Thread flags.
 (define racketeer-thread #f)
 (define highlight-thread #f)
@@ -156,6 +162,7 @@
                get-tab
                get-text
                insert
+               last-line
                last-position
                line-end-position
                line-length
@@ -177,16 +184,17 @@
         (set! highlight-tests? (not highlight-tests?))
         (when (highlight?)
           (set! focus-event #t)
+          (set! run-racketeer? #t)
           (start-racketeer))
         (when (not (highlight?))
-          (stop-racketeer)
-          (clear-statusbar-label)
-          (un-highlight-all-tests)))
+          (stop-racketeer)))
 
       ;; Keyboard focus handler.
       (define/override (on-focus on?)
         (super on-focus on?)
-        (when (and on? (highlight?) (not (is-racketeer-running?)) (not focus-event))
+        (when (and (highlight?) (not run-racketeer?))
+          (set! run-racketeer? #t))
+        (when (and on? run-racketeer? (highlight?) (not racketeer-running?) (not focus-event))
           (set! focus-event #t)
           (when (not (eq? CURRENT-TAB (get-tab)))
             (set! new-window-event #t)
@@ -194,19 +202,22 @@
           (start-racketeer))
         (when (not on?)
           (set! focus-event #f)
-          (stop-racketeer)))
+          (pause-racketeer)))
 
       (define/private (start-racketeer)
-        (stop-racketeer)
+        (set! run-racketeer? #t)
+        (set! racketeer-running? #t)
         (get-gui-language)
-        (set! racketeer-thread (thread (lambda () (check-range)))))
+        (check-range))
+
+      (define/private (pause-racketeer)
+        (set! racketeer-running? #f)
+        (clear-statusbar-label))
 
       (define/private (stop-racketeer)
-        (when (is-thread-running? racketeer-thread)
-          (kill-thread racketeer-thread)))
-
-      (define/private (is-racketeer-running?)
-        (is-thread-running? racketeer-thread))
+        (pause-racketeer)
+        (set! run-racketeer? #f)
+        (un-highlight-all-tests))
 
       ;; File event handler.
       (define/augment (after-load-file success?)
@@ -227,33 +238,22 @@
       ;; GUI language selector event handler.
       (define/augment (after-set-next-settings lang-settings)
         (get-gui-language)
-        (set! lang-change-event #t))
+        (when run-racketeer? (check-range)))
+
 
       ;; Editor event handlers.
+      ;; Does nothing, but must be here for inserts to happen in DrRacket.
       (define/augment (on-insert start len)
-        (begin-edit-sequence))
+        (void))
       (define/augment (after-insert start len)
-        (set! insert-event-counter (+ insert-event-counter 1))
-        (end-edit-sequence))
+        (when run-racketeer? (check-range)))
 
+      ;; Does nothing, but must be here for deletes to happen in DrRacket.
       (define/augment (on-delete start len)
-        (begin-edit-sequence))
+        (void))
       (define/augment (after-delete start len)
-        (set! delete-event #t)
-        (end-edit-sequence))
+        (when run-racketeer? (check-range)))
 
-      (define/override (on-char event)
-        (begin-edit-sequence)
-        (super on-char event)
-        (end-edit-sequence))
-      (define/override (on-local-char event)
-        (begin-edit-sequence)
-        (super on-local-char event)
-        (end-edit-sequence))
-      (define/override (on-default-char event)
-        (begin-edit-sequence)
-        (super on-default-char event)
-        (end-edit-sequence))
 
       ;; ========================================================
       ;; Class-private helpers.
@@ -315,40 +315,24 @@
       ;; Traverse all the expressions and evaluate appropriately.
       (define/private (check-range)
         (when (and (highlight?)
-                   (not (zero? (last-position)))
-                   (or (> insert-event-counter 0)
-                       (and (or delete-event lang-change-event new-window-event)
-                   ;; Evaluates at an interval proportional to the size of the file.
-                            (zero? (modulo (current-milliseconds)
-                                           (* EVAL_INTERVAL (max 1 (order-of-magnitude (last-position))))))))
-                   ) ;; and
-          (define local-insert-event-counter insert-event-counter)
-          (define eval-ok (check-range-helper))
+                   run-racketeer?
+                   (not (zero? (last-position))))
 
+          ;; Do not remove: this must be done, but only for large files.
+          (when (is-large-file?) (get-gui-language))
+
+          (define eval-ok (check-range-helper))
           (when (not eval-ok)
-            (when (not highlighting-cleared)
-              (when (is-thread-running? highlight-thread)
-                (kill-thread highlight-thread))
-              (when (not (is-thread-running? clear-highlight-thread))
-                (set! clear-highlight-thread (thread (lambda () (un-highlight-all-tests))))
-                (thread-wait clear-highlight-thread)))
             (when (or (not highlighting-cleared) file-load-event)
               (set! default-statusbar-message "syntax error in expressions")
-              (set-statusbar-to-default))
+              (thread (lambda () (set-statusbar-to-default))))
+            (when (not highlighting-cleared)
+              (un-highlight-all-tests))
             ) ;; when (not eval-ok)
 
           (when eval-ok
             (highlight-all-tests))
-
-          (if (> insert-event-counter local-insert-event-counter) ;; changed during evaluation
-              (set! insert-event-counter (- insert-event-counter 1))
-              (set! insert-event-counter 0))
-            (set! delete-event #f)
-            (set! lang-change-event #f)
-            (set! new-window-event #f)
-
           ) ;; when
-        (check-range)
         ) ;; define
 
       (define/private (check-range-helper)
@@ -386,7 +370,7 @@
               (set! first-error-test-status #f)
 
               ;; Clear statusbar
-              (set-statusbar-label "evaluating expressions ...")
+              (thread (lambda () (set-statusbar-label "evaluating expressions ...")))
 
               (for ([test-syn tests])
                 (define test-start (max 0 (- (syntax-position test-syn) 1)))
@@ -418,9 +402,6 @@
         ) ;; define
 
       (define/private (highlight-all-tests)
-        (queue-callback highlight-all-tests-helper #f))
-
-      (define (highlight-all-tests-helper)
         (define (hilite key-ignore test-rc)
           (define test-start (test-struct-start-posn test-rc))
           (define test-end (test-struct-end-posn test-rc))
@@ -430,37 +411,26 @@
               (cond [(error-test? test-rc)  error-delta]
                     [(passed-test? test-rc) pass-delta]
                     [(failed-test? test-rc) fail-delta])
-              test-start test-end)) #f) ;; Low priority on the main eventspace thread.
+              test-start test-end)) #t) ;; High priority on the main eventspace thread.
             ) ;; when
           ) ;; define
         ;; Start the highlighting legwork.
         ;; Do not extract into a separate method - location critical for thread safety.
         (freeze-colorer) ;; Temporarily freeze the syntax colorer.
         (begin-edit-sequence #f #f) ;; Take this off the undo stack.
-        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f) ;; Disable editor.
-        (when (not highlighting-cleared)
-          (queue-callback (lambda () (change-style normal-delta 0 (last-position))) #f))
         (hash-for-each test-table hilite)
-        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
-        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus) ;; Return focus.
         (end-edit-sequence)
         (set! highlighting-cleared #f)
         (thaw-colorer)
         ) ;; define
 
       (define/private (un-highlight-all-tests)
-        (queue-callback un-highlight-all-tests-helper #f))
-
-      (define (un-highlight-all-tests-helper)
         (freeze-colorer)
         (set! test-table (make-hash)) ;; Clear test table.
         ;; Unhighlight all the things.
         ;; Do not extract into a separate method - location critical for thread safety.
         (begin-edit-sequence #f #f)
-        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #f)
-          (queue-callback (lambda () (change-style normal-delta 0 (last-position))) #f)
-        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) enable #t)
-        (send (send (send (send (get-tab) get-frame) get-editor) get-canvas) focus)
+        (queue-callback (lambda () (change-style normal-delta 0 (last-position))) #t)
         (end-edit-sequence)
         (set! highlighting-cleared #t)
         (thaw-colorer)
@@ -468,6 +438,10 @@
 
       (define (set-statusbar-to-default)
         (set-statusbar-label default-statusbar-message))
+
+      ;; TODO: Base this on size of file, not number of lines
+      (define (is-large-file?)
+        (> (last-line) LARGE_FILE_NUM_LINES))
 
       (super-new))))
 

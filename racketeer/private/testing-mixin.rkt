@@ -96,16 +96,10 @@
 (define racketeer-running? #f)
 
 ;; Thread flags.
-(define racketeer-thread #f)
-(define highlight-thread #f)
 (define mouse-event-thread #f)
-(define clear-highlight-thread #f)
 
 ;; Editor event flags.
-(define insert-event-counter 0)
-(define delete-event #f)
 (define focus-event #f)
-(define lang-change-event #f)
 (define mouse-event #f)
 (define new-window-event #f)
 (define file-load-event #f)
@@ -114,7 +108,6 @@
 (define highlighting-cleared #t)
 
 ;; Intervals of evaluating the file.
-(define EVAL_INTERVAL 140) ; milliseconds
 (define MOUSE_EVAL_INTERVAL 175)
 
 ;; Test status indicators.
@@ -156,24 +149,16 @@
                change-style
                dc-location-to-editor-location
                end-edit-sequence
-               find-newline
                freeze-colorer
                get-filename
                get-tab
-               get-text
                insert
                last-line
                last-position
-               line-end-position
-               line-length
                line-location
-               line-start-position
                position-line
-               position-location
                save-port
-               set-styles-sticky
-               thaw-colorer
-               )
+               thaw-colorer)
 
       ;; Highlighting handlers.
       (define highlight-tests? (preferences:get 'drracket:racketeer-highlight-tests?))
@@ -183,6 +168,7 @@
         (preferences:set 'drracket:racketeer-highlight-tests? (not highlight-tests?))
         (set! highlight-tests? (not highlight-tests?))
         (when (highlight?)
+          ;; TODO: Check if this is needed.
           (set! focus-event #t)
           (set! run-racketeer? #t)
           (start-racketeer))

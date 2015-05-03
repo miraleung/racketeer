@@ -293,7 +293,7 @@
 
       (define/private (set-statusbar-label message)
         (define frame (send (get-tab) get-frame))
-        (send frame set-rktr-status-message message))
+        (send frame set-rktr-status-message (format "~a " message)))
 
       (define/private (clear-statusbar-label)
         (send (send (get-tab) get-frame) set-rktr-status-message ""))

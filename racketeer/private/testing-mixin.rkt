@@ -351,7 +351,9 @@
             (when evaluator
               (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
               (define tests (get-tests test-in-port))
-              (when wxme-flag (set! tests (reverse tests)))
+              (when (or wxme-flag
+                        (list? CURRENT-LIBRARY))
+                (set! tests (reverse tests)))
 
               ;; Clear test hash table, test status.
               (set! test-table (make-hash))

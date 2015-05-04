@@ -336,14 +336,15 @@
           ;; Handle WXME files.
           ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
           (when wxme-flag
-            (set! test-in-port (wxme-port->port test-in-port))
-            ) ;; when
+            (set! test-in-port (wxme-port->port test-in-port)))
 
           ; If anything is written to the error port while creating the evaluator,
           ; write it to a string port
           (when evaluator
             (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
             (define tests (get-tests test-in-port))
+            ;; TODO: Optimization point
+            #;
             (when (or wxme-flag
                       (list? CURRENT-LIBRARY))
               (set! tests (reverse tests)))
@@ -376,7 +377,7 @@
               ) ;; for
             ;; Statusbar thread doesn't interfere with editor (canvas) events.
             (set! default-statusbar-message (get-test-message first-error-test-status))
-            (thread (lambda () (set-statusbar-to-default))))
+            (thread (lambda () (set-statusbar-to-default)))
             (set! eval-successful #t)
             ) ;; when
            ) ;; let

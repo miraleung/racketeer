@@ -37,10 +37,11 @@
 (define default-statusbar-message "")
 
 
-;; Evaluation limits.
+;; Evaluation constants.
 (define EVAL_INTERVAL_SECONDS 2)
 (define EVAL_LIMIT_SECONDS 0.2)
 (define EVAL_LIMIT_MB 0.1)
+(define evaluator #f)
 
 ;; Language settings (from GUI).
 (define UNINITIALIZED 'uninitialized)
@@ -178,8 +179,7 @@
       ;; Keyboard focus handler.
       (define/override (on-focus on?)
         (super on-focus on?)
-        (when (and (highlight?) (not run-racketeer?))
-          (set! run-racketeer? #t))
+        (set! run-racketeer? (highlight?))
         (when (and on? run-racketeer? (highlight?) (not racketeer-running?) (not focus-event))
           (set! focus-event #t)
           (when (not (eq? CURRENT-TAB (get-tab)))
@@ -232,13 +232,17 @@
       (define/augment (on-insert start len)
         (void))
       (define/augment (after-insert start len)
-        (when run-racketeer? (check-range)))
+        (when (and run-racketeer?
+                   (compilable?))
+          (check-range)))
 
       ;; Does nothing, but must be here for deletes to happen in DrRacket.
       (define/augment (on-delete start len)
         (void))
       (define/augment (after-delete start len)
-        (when run-racketeer? (check-range)))
+        (when (and run-racketeer?
+                   (compilable?))
+          (check-range)))
 
 
       ;; ========================================================
@@ -317,7 +321,6 @@
             (when (not highlighting-cleared)
               (un-highlight-all-tests))
             ) ;; when (not eval-ok)
-
           (when eval-ok
             (highlight-all-tests))
           ) ;; when
@@ -326,70 +329,74 @@
       (define/private (check-range-helper)
         (define eval-successful #f)
         (let/ec k
-          (with-handlers [(exn:fail? (lambda (e) #f))]
-            (define src-out-port (open-output-bytes))
-            (save-port src-out-port)
-            (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
-            (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
-            (define filename (get-filename))
-            (define wxme-flag
-              (or (is-wxme-stream? test-in-port)
-                  (is-wxme-stream? eval-in-port)))
+          (define src-out-port (open-output-bytes))
+          (save-port src-out-port)
+          (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
+          (define wxme-flag (is-wxme-stream? test-in-port))
+          ;; Handle WXME files.
+          ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
+          (when wxme-flag
+            (set! test-in-port (wxme-port->port test-in-port))
+            ) ;; when
 
-            ;; Handle WXME files.
-            ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
-            (when (is-wxme-stream? test-in-port)
-              (set! test-in-port (wxme-port->port test-in-port))
-              ) ;; when
+          ; If anything is written to the error port while creating the evaluator,
+          ; write it to a string port
+          (when evaluator
+            (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
+            (define tests (get-tests test-in-port))
+            (when (or wxme-flag
+                      (list? CURRENT-LIBRARY))
+              (set! tests (reverse tests)))
 
-            ; If anything is written to the error port while creating the evaluator,
-            ; write it to a string port
-            (define evaluator (parameterize [(sandbox-eval-limits '(10 20))
-                                             (sandbox-namespace-specs (append (sandbox-namespace-specs) '(rackunit)))]
-                                (make-module-evaluator
-                                  (remove-tests eval-in-port filename wxme-flag))))
-            (when evaluator
-              (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
-              (define tests (get-tests test-in-port))
-              (when (or wxme-flag
-                        (list? CURRENT-LIBRARY))
-                (set! tests (reverse tests)))
+            ;; Clear test hash table, test status.
+            (set! test-table (make-hash))
+            (set! first-error-test-status #f)
 
-              ;; Clear test hash table, test status.
-              (set! test-table (make-hash))
-              (set! first-error-test-status #f)
+            ;; Clear statusbar
+            (thread (lambda () (set-statusbar-label "evaluating expressions ...")))
 
-              ;; Clear statusbar
-              (thread (lambda () (set-statusbar-label "evaluating expressions ...")))
+            (for/list ([test-syn (in-list tests)])
+              (define test-start (max 0 (- (syntax-position test-syn) 1)))
+              (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
+              (define linenum (position-line test-start))
+              (define test-rc
+                (test-passes? test-syn evaluator linenum test-start test-end))
+              (define-values (ignore1 y-top) (values 0 (line-location linenum)))
+              (define-values (ignore2 y-bottom) (values 0 (line-location linenum #f)))
 
-              (for ([test-syn tests])
-                (define test-start (max 0 (- (syntax-position test-syn) 1)))
-                (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
-                (define linenum (position-line test-start))
-                (define test-rc
-                  (test-passes? test-syn evaluator linenum test-start test-end))
-                (define-values (ignore1 y-top) (values 0 (line-location linenum)))
-                (define-values (ignore2 y-bottom) (values 0 (line-location linenum #f)))
+              (define y-locns (make-y-locations y-top y-bottom))
 
-                (define y-locns (make-y-locations y-top y-bottom))
+              ;; New hash table entry.
+              (hash-set! test-table y-locns test-rc)
 
-                ;; New hash table entry.
-                (hash-set! test-table y-locns test-rc)
+              ;; Set the first syntax error object.
+              (when (and (not first-error-test-status) (not (passed-test? test-rc)))
+                  (set! first-error-test-status test-rc))
 
-                ;; Set the first syntax error object.
-                (when (and (not first-error-test-status) (not (passed-test? test-rc)))
-                    (set! first-error-test-status test-rc))
-
-                ) ;; for
-              ;; Statusbar thread doesn't interfere with editor (canvas) events.
-              (set! default-statusbar-message (get-test-message first-error-test-status))
-              (thread (lambda () (set-statusbar-to-default)))
-              (set! eval-successful #t)
-              ) ;; when
-            ) ;; with-handlers
+              ) ;; for
+            ;; Statusbar thread doesn't interfere with editor (canvas) events.
+            (set! default-statusbar-message (get-test-message first-error-test-status))
+            (thread (lambda () (set-statusbar-to-default))))
+            (set! eval-successful #t)
+            ) ;; when
            ) ;; let
         eval-successful
         ) ;; define
+
+      (define/private (compilable?)
+        (define src-out-port (open-output-bytes))
+        (save-port src-out-port)
+        (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
+        (define filename (get-filename))
+        (with-handlers [(exn:fail? (lambda (e) #f))]
+          (define eval
+            (parameterize
+              [(sandbox-eval-limits '(10 20))
+               (sandbox-namespace-specs (append (sandbox-namespace-specs) '(rackunit)))]
+              (make-module-evaluator
+                (remove-tests eval-in-port filename (is-wxme-stream? eval-in-port)))))
+          (set! evaluator eval)
+          (procedure? eval)))
 
       (define/private (highlight-all-tests)
         (define (hilite key-ignore test-rc)

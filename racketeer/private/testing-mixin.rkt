@@ -273,11 +273,11 @@
                 (define-values (ignore1 yc) (dc-location-to-editor-location 0 y-coord))
                 (define (find-y-range y-locns)
                   (cond [(empty? y-locns) #f]
-                        [(<= (y-locations-top (first y-locns))
+                        [(<= (y-locations-top (car y-locns))
                              yc
-                             (y-locations-bottom (first y-locns)))
-                         (hash-ref test-table (first y-locns))]
-                        [else (find-y-range (rest y-locns))]))]
+                             (y-locations-bottom (car y-locns)))
+                         (hash-ref test-table (car y-locns))]
+                        [else (find-y-range (cdr y-locns))]))]
           (if (zero? (hash-count test-table))
               #f
               (find-y-range lo-y-locns))))
@@ -287,8 +287,8 @@
          (define frame (send (get-tab) get-frame))
          (define new-lib (send frame get-rktr-current-library))
          (when (not (boolean? new-lib))
-           (define lib-name (string-replace (second new-lib) "-reader" ""))
-           (set! CURRENT-LIBRARY (list (first new-lib) lib-name (third new-lib)))
+           (define lib-name (string-replace (cadr new-lib) "-reader" ""))
+           (set! CURRENT-LIBRARY (list (car new-lib) lib-name (caddr new-lib)))
            ) ;; when
         (when (not new-lib)
           (set! CURRENT-LIBRARY #f)
@@ -535,17 +535,17 @@
   (local [(define (syntax-expander-helper to-expand syntax-list)
             (if (empty? to-expand)
               syntax-list
-              (local [(define expanded (syntax->list (first to-expand)))]
+              (local [(define expanded (syntax->list (car to-expand)))]
                      (if expanded
-                       (if (test-syntax? (first to-expand))
+                       (if (test-syntax? (car to-expand))
                           (syntax-expander-helper
-                            (rest to-expand)
-                            (cons (first to-expand) syntax-list))
+                            (cdr to-expand)
+                            (cons (car to-expand) syntax-list))
                           (syntax-expander-helper
                             (append (filter syntax? expanded)
-                                    (rest to-expand))
+                                    (cdr to-expand))
                             syntax-list))
-                      (syntax-expander-helper (rest to-expand) syntax-list)))))]
+                      (syntax-expander-helper (cdr to-expand) syntax-list)))))]
     (syntax-expander-helper to-expand empty)))
 
 (define (test-syntax? syn)
@@ -554,7 +554,7 @@
 (define (test-expression? expr)
   (and (list? expr)
        (not (empty? expr))
-       (member (first expr) test-statements)))
+       (member (car expr) test-statements)))
 
 
 (define (remove-tests src-port filename wxme-port-flag) ;; flag could be set to true for new files
@@ -574,7 +574,7 @@
 (define (test-remover syn filename wxme-port-flag)
   ;; If the current language is not a GUI-selected language, get the lang def (declaration).
   (when (or (boolean? CURRENT-LIBRARY) (symbol? CURRENT-LIBRARY))
-    (set! CURRENT-LIBRARY (third (syntax->list syn))))
+    (set! CURRENT-LIBRARY (caddr (syntax->list syn))))
   (define inner-syn
     (if (and (list? (syntax->datum syn))
              (list? CURRENT-LIBRARY)
@@ -582,10 +582,10 @@
       (cons '#%module-begin (syntax->datum syn)) ;; only for metadata-header files
       (list '#%module-begin (syntax->datum syn))))
 
-  (when (and wxme-port-flag (symbol=? 'begin (first (syntax->datum syn))))
+  (when (and wxme-port-flag (symbol=? 'begin (car (syntax->datum syn))))
     ;; Strip out the first 'begin included by wxme-read-syntax.
     (set! inner-syn
-      (foldr cons empty (cons '#%module-begin (rest (syntax->datum syn)))))
+      (foldr cons empty (cons '#%module-begin (cdr (syntax->datum syn)))))
     )
 
   ;; Restructuring is needed on new files only if a language is specified from the GUI.
@@ -603,13 +603,13 @@
   ;; Process #reader directive for saved files w/ DrRacket metadata header (but not WXME file).
   (when (and (path-string? filename)
              (list? CURRENT-LIBRARY)
-             (not (and (symbol? (syntax-e (first (syntax->list syn))))
-                       (symbol=? (syntax-e (first (syntax->list syn))) 'module))))
+             (not (and (symbol? (syntax-e (car (syntax->list syn))))
+                       (symbol=? (syntax-e (car (syntax->list syn))) 'module))))
     (define fileport (open-input-file filename))
     (define filesyn (synreader fileport))
     (close-input-port fileport)
-    (define modname (syntax->datum (second (syntax->list filesyn))))
-    (define library (syntax->datum (third (syntax->list filesyn))))
+    (define modname (syntax->datum (cadr (syntax->list filesyn))))
+    (define library (syntax->datum (caddr (syntax->list filesyn))))
 
     (when (and (not (boolean? CURRENT-LIBRARY)))
       (set! library CURRENT-LIBRARY))
@@ -618,7 +618,7 @@
       (set! modname 'anonymous-module))
 
     (when (or (and (list? library)
-                   (symbol? (first library)) (symbol=? (first library) 'lib))
+                   (symbol? (car library)) (symbol=? (car library) 'lib))
               (symbol? library))
       (set! syn
         (datum->syntax #f

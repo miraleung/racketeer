@@ -232,17 +232,13 @@
       (define/augment (on-insert start len)
         (void))
       (define/augment (after-insert start len)
-        (when (and run-racketeer?
-                   (compilable?))
-          (check-range)))
+        (check-range))
 
       ;; Does nothing, but must be here for deletes to happen in DrRacket.
       (define/augment (on-delete start len)
         (void))
       (define/augment (after-delete start len)
-        (when (and run-racketeer?
-                   (compilable?))
-          (check-range)))
+        (check-range))
 
 
       ;; ========================================================
@@ -256,6 +252,7 @@
                    (zero? (modulo (current-milliseconds) MOUSE_EVAL_INTERVAL)))
           (mouseover-helper y-coord)
           (set! mouse-event #f))
+        ;; TODO: Optimization point
         (when mouse-event ;; Loop while the last mouse event wasn't handled yet.
           (mouseover-test-handler y-coord)))
 
@@ -306,6 +303,7 @@
       (define/private (check-range)
         (when (and (highlight?)
                    run-racketeer?
+                   (compilable?)
                    (not (zero? (last-position))))
 
           ;; Do not remove: this must be done, but only for large or #lang decl files.
@@ -314,15 +312,19 @@
             (get-gui-language))
 
           (define eval-ok (check-range-helper))
-          (when (not eval-ok)
-            (when (or (not highlighting-cleared) file-load-event)
-              (set! default-statusbar-message "syntax error in expressions")
-              (thread (lambda () (set-statusbar-to-default))))
-            (when (not highlighting-cleared)
-              (un-highlight-all-tests))
-            ) ;; when (not eval-ok)
-          (when eval-ok
-            (highlight-all-tests))
+          (if eval-ok
+            (begin
+              ;; Statusbar thread doesn't interfere with editor (canvas) events.
+              (set! default-statusbar-message (get-test-message first-error-test-status))
+              (thread (lambda () (set-statusbar-to-default)))
+              (highlight-all-tests))
+            (begin
+              (when (or (not highlighting-cleared) file-load-event)
+                (set! default-statusbar-message "syntax error in expressions")
+                (thread (lambda () (set-statusbar-to-default))))
+              (when (not highlighting-cleared)
+                (un-highlight-all-tests)))
+            ) ;; if
           ) ;; when
         ) ;; define
 
@@ -371,13 +373,10 @@
               (hash-set! test-table y-locns test-rc)
 
               ;; Set the first syntax error object.
-              (when (and (not first-error-test-status) (not (passed-test? test-rc)))
-                  (set! first-error-test-status test-rc))
-
+              (if (and (not first-error-test-status) (not (passed-test? test-rc)))
+                  (set! first-error-test-status test-rc)
+                  (void))
               ) ;; for
-            ;; Statusbar thread doesn't interfere with editor (canvas) events.
-            (set! default-statusbar-message (get-test-message first-error-test-status))
-            (thread (lambda () (set-statusbar-to-default)))
             (set! eval-successful #t)
             ) ;; when
            ) ;; let

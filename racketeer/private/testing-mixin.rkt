@@ -1,4 +1,4 @@
-#lang racket
+#lang racket/base
 
 (require drracket/tool
          drracket/tool-lib
@@ -42,6 +42,7 @@
 (define EVAL_LIMIT_SECONDS 0.2)
 (define EVAL_LIMIT_MB 0.1)
 (define evaluator #f)
+(define ft-get-evaluator #f)
 
 ;; Language settings (from GUI).
 (define UNINITIALIZED 'uninitialized)
@@ -303,7 +304,9 @@
       (define/private (check-range)
         (when (and (highlight?)
                    run-racketeer?
-                   (compilable?)
+                   (begin
+                     (set! evaluator (touch (compilable?)))
+                     evaluator)
                    (not (zero? (last-position))))
 
           ;; Do not remove: this must be done, but only for large or #lang decl files.
@@ -388,15 +391,15 @@
         (save-port src-out-port)
         (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
         (define filename (get-filename))
-        (with-handlers [(exn:fail? (lambda (e) #f))]
-          (define eval
-            (parameterize
-              [(sandbox-eval-limits '(10 20))
-               (sandbox-namespace-specs (append (sandbox-namespace-specs) '(rackunit)))]
-              (make-module-evaluator
-                (remove-tests eval-in-port filename (is-wxme-stream? eval-in-port)))))
-          (set! evaluator eval)
-          (procedure? eval)))
+        (future
+          (lambda ()
+            (with-handlers
+              [(exn:fail? (lambda (e) #f))]
+              (parameterize
+                [(sandbox-eval-limits '(10 20))
+                 (sandbox-namespace-specs (append (sandbox-namespace-specs) '(rackunit)))]
+                (make-module-evaluator
+                  (remove-tests eval-in-port filename (is-wxme-stream? eval-in-port))))))))
 
       (define/private (highlight-all-tests)
         (define (hilite key-ignore test-rc)

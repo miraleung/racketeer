@@ -41,8 +41,6 @@
 (define EVAL_INTERVAL_SECONDS 2)
 (define EVAL_LIMIT_SECONDS 0.2)
 (define EVAL_LIMIT_MB 0.1)
-(define evaluator #f)
-(define ft-get-evaluator #f)
 
 ;; Language settings (from GUI).
 (define UNINITIALIZED 'uninitialized)
@@ -302,50 +300,44 @@
 
       ;; Traverse all the expressions and evaluate appropriately.
       (define/private (check-range)
+        (define fc (compilable?))
         (when (and (highlight?)
                    run-racketeer?
-                   (begin
-                     (set! evaluator (touch (compilable?)))
-                     evaluator)
+                   (touch fc)
                    (not (zero? (last-position))))
 
           ;; Do not remove: this must be done, but only for large or #lang decl files.
+          #;
           (when (or (is-large-file?)
                     (not (list? CURRENT-LIBRARY)))
             (get-gui-language))
 
-          (define eval-ok (check-range-helper))
-          (if eval-ok
-            (begin
-              ;; Statusbar thread doesn't interfere with editor (canvas) events.
-              (set! default-statusbar-message (get-test-message first-error-test-status))
-              (thread (lambda () (set-statusbar-to-default)))
-              (highlight-all-tests))
-            (begin
-              (when (or (not highlighting-cleared) file-load-event)
-                (set! default-statusbar-message "syntax error in expressions")
-                (thread (lambda () (set-statusbar-to-default))))
-              (when (not highlighting-cleared)
-                (un-highlight-all-tests)))
-            ) ;; if
+          (define eval-ok (check-range-helper (touch fc)))
+          ;; Statusbar thread doesn't interfere with editor (canvas) events.
+          (set! default-statusbar-message (get-test-message first-error-test-status))
+          (thread (lambda () (set-statusbar-to-default)))
+          (highlight-all-tests);)
           ) ;; when
+        (when (not (touch fc))
+          (set! default-statusbar-message "syntax error in expressions")
+          (thread (lambda () (set-statusbar-to-default))))
+        (when (not highlighting-cleared)
+          (un-highlight-all-tests))
         ) ;; define
 
-      (define/private (check-range-helper)
-        (define eval-successful #f)
-        (let/ec k
-          (define src-out-port (open-output-bytes))
-          (save-port src-out-port)
-          (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
-          (define wxme-flag (is-wxme-stream? test-in-port))
-          ;; Handle WXME files.
-          ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
-          (when wxme-flag
-            (set! test-in-port (wxme-port->port test-in-port)))
+      (define/private (check-range-helper evaluator)
+          (let/ec k
+            (define src-out-port (open-output-bytes))
+            (save-port src-out-port)
+            (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
+            (define wxme-flag (is-wxme-stream? test-in-port))
+            ;; Handle WXME files.
+            ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
+            (when wxme-flag
+              (set! test-in-port (wxme-port->port test-in-port)))
 
-          ; If anything is written to the error port while creating the evaluator,
-          ; write it to a string port
-          (when evaluator
+            ; If anything is written to the error port while creating the evaluator,
+            ; write it to a string port
             (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
             (define tests (get-tests test-in-port))
             ;; TODO: Optimization point
@@ -380,10 +372,7 @@
                   (set! first-error-test-status test-rc)
                   (void))
               ) ;; for
-            (set! eval-successful #t)
-            ) ;; when
            ) ;; let
-        eval-successful
         ) ;; define
 
       (define/private (compilable?)

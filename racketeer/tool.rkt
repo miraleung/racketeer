@@ -60,7 +60,8 @@
 
     ;; Message handler.
     (define/public (set-rktr-status-message str)
-                   (send rktr-status-message set-label str))
+      (unless (symbol? rktr-status-message)
+        (send rktr-status-message set-label str)))
 
     ;; Get the currently-selected language (from GUI).
     (define/public (get-rktr-current-library)

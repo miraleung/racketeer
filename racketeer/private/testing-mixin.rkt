@@ -306,12 +306,6 @@
                    (touch fc)
                    (not (zero? (last-position))))
 
-          ;; Do not remove: this must be done, but only for large or #lang decl files.
-          #;
-          (when (or (is-large-file?)
-                    (not (list? CURRENT-LIBRARY)))
-            (get-gui-language))
-
           (define eval-ok (check-range-helper (touch fc)))
           ;; Statusbar thread doesn't interfere with editor (canvas) events.
           (set! default-statusbar-message (get-test-message first-error-test-status))
@@ -329,24 +323,23 @@
           (let/ec k
             (define src-out-port (open-output-bytes))
             (save-port src-out-port)
-            (define test-in-port (open-input-bytes (get-output-bytes src-out-port)))
-            (define wxme-flag (is-wxme-stream? test-in-port))
-            ;; Handle WXME files.
-            ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
-            (when wxme-flag
-              (set! test-in-port (wxme-port->port test-in-port)))
+            (define port-future
+              (future (lambda () (open-input-bytes (get-output-bytes src-out-port)))))
+            (define wxme-flag (is-wxme-stream? (touch port-future)))
+            (define test-in-port
+              (if wxme-flag
+                (wxme-port->port (touch port-future))
+                (touch port-future)))
 
             ; If anything is written to the error port while creating the evaluator,
             ; write it to a string port
             (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
 
             ;; List of syntax objects of test expressions.
-            (define tests (get-tests test-in-port))
-            ;; TODO: Optimization point
-            #;
-            (when (or wxme-flag
-                      (list? CURRENT-LIBRARY))
-              (set! tests (reverse tests)))
+            (define tests
+              (if (or wxme-flag (list? CURRENT-LIBRARY))
+                (reverse (get-tests test-in-port))
+                (get-tests test-in-port)))
 
             ;; Clear test hash table, test status.
             (set! test-table (make-hash))
@@ -387,8 +380,13 @@
       (define/private (compilable?)
         (define src-out-port (open-output-bytes))
         (save-port src-out-port)
+        ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
         (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
         (define filename (get-filename))
+        ;; Do not remove: this must be done, but only for large or #lang decl files.
+        (when (or (is-large-file?)
+                  (not (list? CURRENT-LIBRARY)))
+          (get-gui-language))
         (future
           (lambda ()
             (with-handlers

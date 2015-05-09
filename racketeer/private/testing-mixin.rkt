@@ -299,22 +299,23 @@
       ;; Traverse all the expressions and evaluate appropriately.
       (define/private (check-range)
         (define fc (compilable?))
-        (when (and (highlight?)
-                   run-racketeer?
-                   (touch fc)
+        (when (and run-racketeer?
+                   (highlight?)
                    (not (zero? (last-position))))
-
-          (define eval-ok (check-range-helper (touch fc)))
-          ;; Statusbar thread doesn't interfere with editor (canvas) events.
-          (set! default-statusbar-message (get-test-message first-error-test-status))
-          (thread (lambda () (set-statusbar-to-default)))
-          (highlight-all-tests);)
+          (if (touch fc)
+            (begin
+              (let [(eval-ok (check-range-helper (touch fc)))]
+                ;; Statusbar thread doesn't interfere with editor (canvas) events.
+                (set! default-statusbar-message (get-test-message first-error-test-status))
+                (thread (lambda () (set-statusbar-to-default)))
+                (highlight-all-tests)))
+            (begin
+              (set! default-statusbar-message "syntax error in expressions")
+              (thread (lambda () (set-statusbar-to-default)))
+              (when (not highlighting-cleared)
+                (un-highlight-all-tests)))
+            ) ;; if
           ) ;; when
-        (when (not (touch fc))
-          (set! default-statusbar-message "syntax error in expressions")
-          (thread (lambda () (set-statusbar-to-default))))
-        (when (not highlighting-cleared)
-          (un-highlight-all-tests))
         ) ;; define
 
       (define/private (check-range-helper evaluator)

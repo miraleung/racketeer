@@ -282,13 +282,11 @@
       (define/private (get-gui-language)
          (define frame (send (get-tab) get-frame))
          (define new-lib (send frame get-rktr-current-library))
-         (when (not (boolean? new-lib))
-           (define lib-name (string-replace (cadr new-lib) "-reader" ""))
-           (set! CURRENT-LIBRARY (list (car new-lib) lib-name (caddr new-lib)))
-           ) ;; when
-        (when (not new-lib)
-          (set! CURRENT-LIBRARY #f)
-          ) ;; when
+         (if (not (boolean? new-lib))
+           (begin
+             (let [(lib-name (string-replace (cadr new-lib) "-reader" ""))]
+               (set! CURRENT-LIBRARY (list (car new-lib) lib-name (caddr new-lib)))))
+           (set! CURRENT-LIBRARY #f))
         ) ;; define
 
       (define/private (set-statusbar-label message)

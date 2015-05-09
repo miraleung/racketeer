@@ -339,6 +339,8 @@
             ; If anything is written to the error port while creating the evaluator,
             ; write it to a string port
             (set-eval-limits evaluator EVAL_LIMIT_SECONDS EVAL_LIMIT_MB)
+
+            ;; List of syntax objects of test expressions.
             (define tests (get-tests test-in-port))
             ;; TODO: Optimization point
             #;
@@ -353,24 +355,31 @@
             ;; Clear statusbar
             (thread (lambda () (set-statusbar-label "evaluating expressions ...")))
 
-            (for/list ([test-syn (in-list tests)])
-              (define test-start (max 0 (- (syntax-position test-syn) 1)))
-              (define test-end (+ (syntax-position test-syn) (syntax-span test-syn)))
-              (define linenum (position-line test-start))
-              (define test-rc
-                (test-passes? test-syn evaluator linenum test-start test-end))
-              (define-values (ignore1 y-top) (values 0 (line-location linenum)))
-              (define-values (ignore2 y-bottom) (values 0 (line-location linenum #f)))
-
-              (define y-locns (make-y-locations y-top y-bottom))
-
+            (for/list ([test-rc
+                         (in-list
+                           (map
+                             (lambda (syn)
+                               (let [(linenum (position-line (max 0 (sub1 (syntax-position syn)))))
+                                     (test-start (max 0 (sub1 (syntax-position syn))))
+                                     (test-end (+ (syntax-position syn) (syntax-span syn)))]
+                                 (test-passes? syn evaluator linenum test-start test-end)))
+                             tests))]
+                       [y-locns
+                         (in-list
+                           (map
+                             (lambda (syn)
+                               (let [(linenum (position-line (max 0 (sub1 (syntax-position syn)))))]
+                                 (let-values
+                                   ([(ignore1 y-top) (values 0 (line-location linenum))]
+                                    [(ignore2 y-bottom) (values 0 (line-location linenum #f))])
+                                   (make-y-locations y-top y-bottom))))
+                             tests))])
               ;; New hash table entry.
               (hash-set! test-table y-locns test-rc)
 
               ;; Set the first syntax error object.
-              (if (and (not first-error-test-status) (not (passed-test? test-rc)))
-                  (set! first-error-test-status test-rc)
-                  (void))
+              (when (and (not first-error-test-status) (not (passed-test? test-rc)))
+                  (set! first-error-test-status test-rc))
               ) ;; for
            ) ;; let
         ) ;; define

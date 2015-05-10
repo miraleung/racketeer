@@ -114,6 +114,7 @@
 
 ;; Intervals of evaluating the file.
 (define MOUSE_EVAL_INTERVAL 175)
+(define PROG_EVAL_INTERVAL 1000) ;; milliseconds
 
 ;; Test status indicators.
 (define (passed-test? ts) (and (test-struct? ts) (symbol=? STATE_PASS (test-struct-state ts))))
@@ -168,7 +169,7 @@
       (define timer
         (new timer%
              [notify-callback (lambda () (check-range (compilable?)))]
-             [interval 1000]))
+             [interval PROG_EVAL_INTERVAL]))
 
       ;; Highlighting handlers.
       (define highlight-tests? (preferences:get 'drracket:racketeer-highlight-tests?))
@@ -178,7 +179,6 @@
         (preferences:set 'drracket:racketeer-highlight-tests? (not highlight-tests?))
         (set! highlight-tests? (not highlight-tests?))
         (when (highlight?)
-          ;; TODO: Check if this is needed.
           (set! focus-event #t)
           (set! run-racketeer? #t)
           (start-racketeer))
@@ -189,21 +189,22 @@
       (define/override (on-focus on?)
         (super on-focus on?)
         (set! run-racketeer? (highlight?))
-        (when (and on? run-racketeer? (highlight?) (not racketeer-running?) (not focus-event))
-          (set! focus-event #t)
-          (when (not (eq? CURRENT-TAB (get-tab)))
-            (set! new-window-event #t)
-            (set! CURRENT-TAB (get-tab)))
-          (start-racketeer))
-        (when (not on?)
-          (set! focus-event #f)
-          (pause-racketeer)))
+        (if on?
+          (when (and run-racketeer? (highlight?) (not racketeer-running?) (not focus-event))
+            (set! focus-event #t)
+            (when (not (eq? CURRENT-TAB (get-tab)))
+              (set! new-window-event #t)
+              (set! CURRENT-TAB (get-tab)))
+            (start-racketeer))
+          (begin
+            (set! focus-event #f)
+            (pause-racketeer))))
 
       (define/private (start-racketeer)
         (set! run-racketeer? #t)
         (set! racketeer-running? #t)
         (get-gui-language)
-        (send timer start 1000))
+        (send timer start PROG_EVAL_INTERVAL))
 
       (define/private (pause-racketeer)
         (set! racketeer-running? #f)
@@ -311,7 +312,9 @@
       (define/private (check-range fc)
         (when (and run-racketeer?
                    (highlight?)
-                   (or (not (zero? num-insert-evts)) (not (zero? num-delete-evts)))
+                   (or (not (zero? num-insert-evts))
+                       (not (zero? num-delete-evts))
+                       focus-event)
                    (not (zero? (last-position))))
           (if (touch fc)
             (begin

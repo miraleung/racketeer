@@ -25,6 +25,8 @@
 
 ;; Program evaluation state.
 (define has-syntax-error #f)
+(define num-insert-evts 0)
+(define num-delete-evts 0)
 
 ;; Test states
 (define STATE_PASS 'pass)
@@ -163,6 +165,11 @@
                save-port
                thaw-colorer)
 
+      (define timer
+        (new timer%
+             [notify-callback (lambda () (check-range (compilable?)))]
+             [interval 1000]))
+
       ;; Highlighting handlers.
       (define highlight-tests? (preferences:get 'drracket:racketeer-highlight-tests?))
 
@@ -196,15 +203,17 @@
         (set! run-racketeer? #t)
         (set! racketeer-running? #t)
         (get-gui-language)
-        (check-range (compilable?)))
+        (send timer start 1000))
 
       (define/private (pause-racketeer)
         (set! racketeer-running? #f)
+        (send timer stop)
         (clear-statusbar-label))
 
       (define/private (stop-racketeer)
         (pause-racketeer)
         (set! run-racketeer? #f)
+        (send timer stop)
         (un-highlight-all-tests))
 
       ;; File event handler.
@@ -234,13 +243,13 @@
       (define/augment (on-insert start len)
         (void))
       (define/augment (after-insert start len)
-        (check-range (compilable?)))
+        (set! num-insert-evts (add1 num-insert-evts)))
 
       ;; Does nothing, but must be here for deletes to happen in DrRacket.
       (define/augment (on-delete start len)
         (void))
       (define/augment (after-delete start len)
-        (check-range (compilable?)))
+        (set! num-delete-evts (add1 num-delete-evts)))
 
 
       ;; ========================================================
@@ -254,7 +263,6 @@
                    (zero? (modulo (current-milliseconds) MOUSE_EVAL_INTERVAL)))
           (mouseover-helper y-coord)
           (set! mouse-event #f))
-        ;; TODO: Optimization point
         (when mouse-event ;; Loop while the last mouse event wasn't handled yet.
           (mouseover-test-handler y-coord)))
 
@@ -303,6 +311,7 @@
       (define/private (check-range fc)
         (when (and run-racketeer?
                    (highlight?)
+                   (or (not (zero? num-insert-evts)) (not (zero? num-delete-evts)))
                    (not (zero? (last-position))))
           (if (touch fc)
             (begin
@@ -310,7 +319,10 @@
                 ;; Statusbar thread doesn't interfere with editor (canvas) events.
                 (set! default-statusbar-message (get-test-message first-error-test-status))
                 (thread (lambda () (set-statusbar-to-default)))
-                (highlight-all-tests)))
+                (highlight-all-tests))
+              (thread (lambda () (set! num-insert-evts 0)))
+              (thread (lambda () (set! num-delete-evts 0)))
+              ) ;; begin
             (begin
               (thread (lambda () (set-statusbar-label "syntax error in expressions")))
               (when (not highlighting-cleared)
@@ -377,6 +389,8 @@
            ) ;; let
         ) ;; define
 
+      ;; When the program is compilable, returns a future containing
+      ;; the evaluator object; false otherwise.
       (define/private (compilable?)
         (define src-out-port (open-output-bytes))
         (save-port src-out-port)

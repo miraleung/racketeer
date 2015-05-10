@@ -400,23 +400,23 @@
                                 filename (is-wxme-stream? (touch eval-in-port-future)))))))))
 
       (define/private (highlight-all-tests)
-        (define (hilite key-ignore test-rc)
-          (define test-start (test-struct-start-posn test-rc))
-          (define test-end (test-struct-end-posn test-rc))
-          (when (test-struct? test-rc)
-            (queue-callback (lambda ()
-             (change-style
-              (cond [(error-test? test-rc)  error-delta]
-                    [(passed-test? test-rc) pass-delta]
-                    [(failed-test? test-rc) fail-delta])
-              test-start test-end)) #t) ;; High priority on the main eventspace thread.
-            ) ;; when
-          ) ;; define
         ;; Start the highlighting legwork.
         ;; Do not extract into a separate method - location critical for thread safety.
         (freeze-colorer) ;; Temporarily freeze the syntax colorer.
         (begin-edit-sequence #f #f) ;; Take this off the undo stack.
-        (hash-for-each test-table hilite)
+        (for/list [(test-rc (in-list (map (lambda (pair) (cdr pair)) (hash->list test-table))))]
+          (let [(test-start (test-struct-start-posn test-rc))
+                (test-end (test-struct-end-posn test-rc))]
+            (when (test-struct? test-rc)
+              (queue-callback (lambda ()
+                (change-style
+                  (cond [(error-test? test-rc)  error-delta]
+                        [(passed-test? test-rc) pass-delta]
+                        [(failed-test? test-rc) fail-delta])
+                  test-start test-end)) #t) ;; High priority on the main eventspace thread.
+              ) ;; when
+            ) ;; let
+          ) ;; for/list
         (end-edit-sequence)
         (set! highlighting-cleared #f)
         (thaw-colorer)

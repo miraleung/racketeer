@@ -383,21 +383,22 @@
         ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
         (define eval-in-port-future
           (future (lambda () (open-input-bytes (get-output-bytes src-out-port)))))
-        (define filename (get-filename))
-        ;; Do not remove: this must be done, but only for large or #lang decl files.
-        (when (or (is-large-file?)
-                  (not (list? CURRENT-LIBRARY)))
-          (get-gui-language))
+        (define definitions-future
+          (future (lambda () (remove-tests (touch eval-in-port-future)
+                                           (get-filename)
+                                           (is-wxme-stream? (touch eval-in-port-future))))))
         (future
           (lambda ()
+            ;; Do not remove: this must be done, but only for large or #lang decl files.
+            (when (or (is-large-file?)
+                      (not (list? CURRENT-LIBRARY)))
+              (get-gui-language))
             (with-handlers
               [(exn:fail? (lambda (e) #f))]
               (parameterize
                 [(sandbox-eval-limits '(10 20))
                  (sandbox-namespace-specs (append (sandbox-namespace-specs) '(rackunit)))]
-                (make-module-evaluator
-                  (remove-tests (touch eval-in-port-future)
-                                filename (is-wxme-stream? (touch eval-in-port-future)))))))))
+                (make-module-evaluator (touch definitions-future)))))))
 
       (define/private (highlight-all-tests)
         ;; Start the highlighting legwork.

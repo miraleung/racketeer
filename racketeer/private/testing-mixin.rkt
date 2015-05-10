@@ -23,6 +23,9 @@
 ;; File size
 (define LARGE_FILE_NUM_LINES 250)
 
+;; Program evaluation state.
+(define has-syntax-error #f)
+
 ;; Test states
 (define STATE_PASS 'pass)
 (define STATE_FAIL 'fail)
@@ -193,7 +196,7 @@
         (set! run-racketeer? #t)
         (set! racketeer-running? #t)
         (get-gui-language)
-        (check-range))
+        (check-range (compilable?)))
 
       (define/private (pause-racketeer)
         (set! racketeer-running? #f)
@@ -223,7 +226,7 @@
       ;; GUI language selector event handler.
       (define/augment (after-set-next-settings lang-settings)
         (get-gui-language)
-        (when run-racketeer? (check-range)))
+        (when run-racketeer? (check-range (compilable?))))
 
 
       ;; Editor event handlers.
@@ -231,13 +234,13 @@
       (define/augment (on-insert start len)
         (void))
       (define/augment (after-insert start len)
-        (check-range))
+        (check-range (compilable?)))
 
       ;; Does nothing, but must be here for deletes to happen in DrRacket.
       (define/augment (on-delete start len)
         (void))
       (define/augment (after-delete start len)
-        (check-range))
+        (check-range (compilable?)))
 
 
       ;; ========================================================
@@ -297,8 +300,7 @@
         (send (send (get-tab) get-frame) set-rktr-status-message ""))
 
       ;; Traverse all the expressions and evaluate appropriately.
-      (define/private (check-range)
-        (define fc (compilable?))
+      (define/private (check-range fc)
         (when (and run-racketeer?
                    (highlight?)
                    (not (zero? (last-position))))
@@ -310,8 +312,7 @@
                 (thread (lambda () (set-statusbar-to-default)))
                 (highlight-all-tests)))
             (begin
-              (set! default-statusbar-message "syntax error in expressions")
-              (thread (lambda () (set-statusbar-to-default)))
+              (thread (lambda () (set-statusbar-label "syntax error in expressions")))
               (when (not highlighting-cleared)
                 (un-highlight-all-tests)))
             ) ;; if
@@ -380,7 +381,8 @@
         (define src-out-port (open-output-bytes))
         (save-port src-out-port)
         ;; If eval-in-port is a WXME-port, it will be handled by {@code synreader}.
-        (define eval-in-port (open-input-bytes (get-output-bytes src-out-port)))
+        (define eval-in-port-future
+          (future (lambda () (open-input-bytes (get-output-bytes src-out-port)))))
         (define filename (get-filename))
         ;; Do not remove: this must be done, but only for large or #lang decl files.
         (when (or (is-large-file?)
@@ -394,7 +396,8 @@
                 [(sandbox-eval-limits '(10 20))
                  (sandbox-namespace-specs (append (sandbox-namespace-specs) '(rackunit)))]
                 (make-module-evaluator
-                  (remove-tests eval-in-port filename (is-wxme-stream? eval-in-port))))))))
+                  (remove-tests (touch eval-in-port-future)
+                                filename (is-wxme-stream? (touch eval-in-port-future)))))))))
 
       (define/private (highlight-all-tests)
         (define (hilite key-ignore test-rc)
@@ -448,10 +451,10 @@
 (define (stringify prefix message)
   (string-append
    prefix
-   (let [(o (open-output-string))]
-     (parameterize [(current-output-port o)]
+   (let [(o (future (lambda () (open-output-string))))]
+     (parameterize [(current-output-port (touch o))]
        (display (format ": ~a" message)))
-     (get-output-string o))))
+     (get-output-string (touch o)))))
 
 ;; Get the line number of the test struct.
 (define (linenum-prefix ts)

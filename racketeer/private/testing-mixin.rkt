@@ -478,7 +478,7 @@
 (define (linenum-prefix ts)
   (if (not ts)
     ""
-    (string-append "line " (number->string (+ 1 (test-struct-linenum ts))) ": ")))
+    (string-append "line " (number->string (add1 (test-struct-linenum ts))) ": ")))
 
 ;; test-struct -> string
 ;; Format test messages for failed/error tests.
@@ -574,15 +574,15 @@
        (not (empty? expr))
        (member (car expr) test-statements)))
 
-
+;; Returns a list of definition expressions.
 (define (remove-tests src-port filename wxme-port-flag) ;; flag could be set to true for new files
-  (define the-syntax #f)
-  (if (and (path-string? filename) ;; is a metadata-header file
-           (not (boolean? CURRENT-LIBRARY))
-           (not wxme-port-flag))
-    (set! the-syntax (datum->syntax #f (get-syntax-list src-port)))
-    (set! the-syntax (synreader src-port)))
-  (test-remover the-syntax filename wxme-port-flag))
+  (let [(the-syntax
+          (if (and (path-string? filename) ;; is a metadata-header file
+                   (not (boolean? CURRENT-LIBRARY))
+                   (not wxme-port-flag))
+            (datum->syntax #f (get-syntax-list src-port))
+            (synreader src-port)))]
+    (test-remover the-syntax filename wxme-port-flag)))
 
 ;; Remove test expressions and process syntax object for evaluation.
 ;; There are three cases to handle:

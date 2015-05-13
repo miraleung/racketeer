@@ -30,6 +30,17 @@ raco link racketeer
 raco setup racketeer
 ```
 
+Racketeer Package Updates
+--------------------------
+#### From DrRacket
+1. File -> Package Manager -> Available From Catalog
+2. Click "Update Package List"
+
+#### From raco
+```
+raco pkg update racketeer
+```
+
 Usage
 -------
 1. Code

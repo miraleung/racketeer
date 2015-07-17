@@ -5,6 +5,7 @@
          framework
          mrlib/switchable-button
          racket/class
+         racket/function
          racket/gui/base
          racket/gui
          racket/unit
@@ -13,7 +14,6 @@
          test-engine/racket-tests
          rackunit
          syntax-color/module-lexer
-         unstable/function
          wxme)
 
 ;; CONSTANTS

@@ -7,5 +7,4 @@
                "rackunit-lib"
                "sandbox-lib"
                "syntax-color-lib"
-               "unstable-list-lib"
                "wxme-lib"))

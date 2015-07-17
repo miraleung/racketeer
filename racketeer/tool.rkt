@@ -5,8 +5,8 @@
 (require drracket/tool
          framework
          racket/class
+         racket/function
          racket/gui
-         unstable/function
          "private/testing-mixin.rkt")
 
 (import drracket:tool^)
